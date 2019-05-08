@@ -75,7 +75,7 @@
 ;; {"a":"x","b":"y","c":"z"} - 25
 
 (defn generate-document [size]
-  (let [ ;; chars (cycle (map char (range 97 123)))
+  (let [characters (cycle (map char (range 97 123)))
         document-overhead 2
         kv-overhead 5
         additional-kv-overhead 1
@@ -83,25 +83,74 @@
         minimum-document-size (+ document-overhead minimum-kv-size)
         current-available-size (- size document-overhead)
         maximum-number-of-kvs
-        (loop [current-available-size current-available-size
+        (loop [available-size current-available-size
                number-of-kvs 0]
-          (let [possible-additional-kv-overhead (if (pos? number-of-kvs)
-                                                  1
-                                                  0)
-                available-size-with-another-kv (- current-available-size
-                                                  (+ minimum-kv-size
-                                                     possible-additional-kv-overhead))]
+          (let [possible-additional-kv-overhead
+                (if (pos? number-of-kvs)
+                  1
+                  0)
+                available-size-with-another-kv
+                (- available-size
+                   (+ minimum-kv-size
+                      possible-additional-kv-overhead))]
             (if (> 0 available-size-with-another-kv)
               number-of-kvs
               (recur available-size-with-another-kv
                      (inc number-of-kvs)))))
         number-of-kvs (+ 1 (rand-int maximum-number-of-kvs))
-        maximum-key-size 2]
-    {:current-available-size current-available-size
-     :maximum-number-of-kvs maximum-number-of-kvs
-     :number-of-kvs number-of-kvs}))
+        total-overhead (+ document-overhead
+                          (* number-of-kvs kv-overhead)
+                          (* (- number-of-kvs 1) additional-kv-overhead))
+        current-available-size (+ document-overhead
+                                  (- current-available-size total-overhead))
+        _ (pprint [:available-size-minus-overhead current-available-size])
+        generate-tokens
+        (fn generate-tokens [number-of-tokens total-available-size terminate?]
+          (loop [available-size total-available-size
+                 tokens []]
+            (let [tokens-to-go (- number-of-tokens (count tokens))
+                  minimum-required-size-for-rest (+ 1
+                                                    (* 2 tokens-to-go))]
+              (if (zero? tokens-to-go)
+                tokens
+                (let [token-size (if (and terminate? (= 1 tokens-to-go))
+                                   available-size
+                                   (+ 1 (rand-int (- available-size
+                                                     minimum-required-size-for-rest))))
+                      token (apply str (take token-size characters))]
+                  (pprint {:tokens [(count tokens) tokens-to-go]
+                           :available-size available-size
+                           :token-size token-size
+                           :token token})
+                  (recur (- available-size token-size)
+                         (conj tokens token)))))))
+        ks (generate-tokens number-of-kvs current-available-size false)
+        current-available-size (- current-available-size (reduce + (map count ks)))
+        _ (pprint [:available-size-minus-ks current-available-size])
+        vs (generate-tokens number-of-kvs current-available-size true)
+        current-available-size (- current-available-size (reduce + (map count vs)))
+        _ (pprint [:available-size-minus-vs current-available-size])]
+    (let [size-ks (reduce + (map count ks))
+          size-vs (reduce + (map count vs))
+          count-ks (count ks)
+          count-vs (count vs)]
+      {:maximum-number-of-kvs maximum-number-of-kvs
+       :number-of-kvs number-of-kvs
+       :ks ks
+       :vs vs
+       :count-ks count-ks
+       :count-vs count-vs
+       :size-ks size-ks
+       :size-vs size-vs
+       :total-overhead total-overhead
+       :current-available-size current-available-size
+       :generated-size (+ total-overhead size-ks size-vs)
+       :size size
+       :size-ok? (= size (+ total-overhead size-ks size-vs))})))
 
-(generate-document 100)
+(pprint (generate-document 100))
+;; 20 => rand 2 (- total-size minimum-size-for-rest)
+;;       rand 2 (- total-size minimum-size-for-rest)
 
 (defn generate-document-batches [documents bulk-size]
   (->> (repeatedly documents generate-document)
