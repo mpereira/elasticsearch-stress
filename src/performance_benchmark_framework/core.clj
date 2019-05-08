@@ -74,8 +74,34 @@
 ;; {"a":"","b":"","c":""} - 22
 ;; {"a":"x","b":"y","c":"z"} - 25
 
-(defn generate-document []
-  {})
+(defn generate-document [size]
+  (let [ ;; chars (cycle (map char (range 97 123)))
+        document-overhead 2
+        kv-overhead 5
+        additional-kv-overhead 1
+        minimum-kv-size 7
+        minimum-document-size (+ document-overhead minimum-kv-size)
+        current-available-size (- size document-overhead)
+        maximum-number-of-kvs
+        (loop [current-available-size current-available-size
+               number-of-kvs 0]
+          (let [possible-additional-kv-overhead (if (pos? number-of-kvs)
+                                                  1
+                                                  0)
+                available-size-with-another-kv (- current-available-size
+                                                  (+ minimum-kv-size
+                                                     possible-additional-kv-overhead))]
+            (if (> 0 available-size-with-another-kv)
+              number-of-kvs
+              (recur available-size-with-another-kv
+                     (inc number-of-kvs)))))
+        number-of-kvs (+ 1 (rand-int maximum-number-of-kvs))
+        maximum-key-size 2]
+    {:current-available-size current-available-size
+     :maximum-number-of-kvs maximum-number-of-kvs
+     :number-of-kvs number-of-kvs}))
+
+(generate-document 100)
 
 (defn generate-document-batches [documents bulk-size]
   (->> (repeatedly documents generate-document)
