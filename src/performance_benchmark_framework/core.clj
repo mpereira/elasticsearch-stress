@@ -104,16 +104,18 @@
         current-available-size (+ document-overhead
                                   (- current-available-size total-overhead))
         _ (pprint [:available-size-minus-overhead current-available-size])
+        size-for-ks (+ (* 1 number-of-kvs)
+                       (+ 1 (rand-int (- current-available-size (* 2 number-of-kvs)))))
+        _ (pprint [:size-for-ks size-for-ks])
         generate-tokens
-        (fn generate-tokens [number-of-tokens total-available-size terminate?]
+        (fn generate-tokens [number-of-tokens total-available-size]
           (loop [available-size total-available-size
                  tokens []]
             (let [tokens-to-go (- number-of-tokens (count tokens))
-                  minimum-required-size-for-rest (+ 1
-                                                    (* 2 tokens-to-go))]
+                  minimum-required-size-for-rest tokens-to-go]
               (if (zero? tokens-to-go)
                 tokens
-                (let [token-size (if (and terminate? (= 1 tokens-to-go))
+                (let [token-size (if (= 1 tokens-to-go)
                                    available-size
                                    (+ 1 (rand-int (- available-size
                                                      minimum-required-size-for-rest))))
@@ -124,29 +126,31 @@
                            :token token})
                   (recur (- available-size token-size)
                          (conj tokens token)))))))
-        ks (generate-tokens number-of-kvs current-available-size false)
-        current-available-size (- current-available-size (reduce + (map count ks)))
-        _ (pprint [:available-size-minus-ks current-available-size])
-        vs (generate-tokens number-of-kvs current-available-size true)
+        ks (generate-tokens number-of-kvs size-for-ks)
+        size-for-vs (- current-available-size size-for-ks)
+        _ (pprint [:size-for-vs size-for-vs])
+        vs (generate-tokens number-of-kvs size-for-vs)
         current-available-size (- current-available-size (reduce + (map count vs)))
         _ (pprint [:available-size-minus-vs current-available-size])]
     (let [size-ks (reduce + (map count ks))
           size-vs (reduce + (map count vs))
           count-ks (count ks)
           count-vs (count vs)]
-      {:maximum-number-of-kvs maximum-number-of-kvs
-       :number-of-kvs number-of-kvs
-       :ks ks
-       :vs vs
-       :count-ks count-ks
-       :count-vs count-vs
-       :size-ks size-ks
-       :size-vs size-vs
-       :total-overhead total-overhead
-       :current-available-size current-available-size
-       :generated-size (+ total-overhead size-ks size-vs)
-       :size size
-       :size-ok? (= size (+ total-overhead size-ks size-vs))})))
+      (pprint {:maximum-number-of-kvs maximum-number-of-kvs
+               :number-of-kvs number-of-kvs
+               :ks ks
+               :vs vs
+               :count-ks count-ks
+               :count-vs count-vs
+               :size-ks size-ks
+               :size-vs size-vs
+               :total-overhead total-overhead
+               :current-available-size current-available-size
+               :generated-size (+ total-overhead size-ks size-vs)
+               :size size
+               :size-ok? (= size (+ total-overhead size-ks size-vs))})
+      ;; keys have to be distinct...
+      (into {} (map vector ks vs)))))
 
 (pprint (generate-document 100))
 ;; 20 => rand 2 (- total-size minimum-size-for-rest)
