@@ -8,6 +8,12 @@
 ** Infrastructure
    https://docs.confluent.io/current/quickstart/ce-docker-quickstart.html
 
+** CLI
+   https://github.com/l3nz/cli-matic
+
+** Benchmarking tools
+   https://github.com/etcd-io/etcd/tree/master/tools/benchmark
+
 ** Usage
 
    FIXME: explanation

@@ -7,7 +7,8 @@
             [kixi.stats.core :as stats]
             [kixi.stats.distribution :refer [quantile]]
             [qbits.spandex :as s]
-            [taoensso.timbre :refer [info]]))
+            [taoensso.timbre :refer [info]])
+  (:import (java.util Random)))
 
 (defmacro runtime [body]
   `(let [start# (. System (nanoTime))
@@ -74,16 +75,67 @@
 ;; {"a":"","b":"","c":""} - 22
 ;; {"a":"x","b":"y","c":"z"} - 25
 
+(def digit (range 0 10))
+
+(def lowercase-alpha (map char (range (int \a) (inc (int \z)))))
+
+(def uppercase-alpha (map char (range (int \A) (inc (int \Z)))))
+
+(def symbol* [\- \_ \space \,])
+
+(def lowercase-alpha-numeric
+  (concat lowercase-alpha digit))
+
+(def uppercase-alpha-numeric
+  (concat uppercase-alpha digit))
+
+(def upper-and-lowercase-alpha-numeric
+  (concat uppercase-alpha lowercase-alpha-numeric))
+
+(defn generate-field-name [size]
+  (apply str
+         (rand-nth lowercase-alpha)
+         (take (dec size)
+               (repeatedly #(rand-nth lowercase-alpha-numeric)))))
+
+(defn generate-value [size]
+  (apply str
+         (take size
+               (repeatedly #(rand-nth (concat lowercase-alpha-numeric
+                                              symbol*))))))
+
+(defn generate-tokens
+  [generator number-of-tokens total-available-size unique?]
+  (loop [available-size total-available-size
+         tokens (if unique? #{} [])]
+    (let [tokens-to-go (- number-of-tokens (count tokens))
+          minimum-required-size-for-rest tokens-to-go]
+      ;; in case of `unique?` maybe check instead if it's even possible to
+      ;; generate more unique tokens.
+      (if (zero? tokens-to-go)
+        tokens
+        (let [token-size (if (= 1 tokens-to-go)
+                           available-size
+                           (inc (rand-int (- available-size
+                                             minimum-required-size-for-rest))))
+              token (apply str (generator token-size))]
+          ;; (pprint {:tokens [(count tokens) tokens-to-go]
+          ;;          :available-size available-size
+          ;;          :token-size token-size
+          ;;          :token token})
+          (if (and unique? (contains? tokens token))
+            (recur available-size tokens)
+            (recur (- available-size token-size)
+                   (conj tokens token))))))))
+
 (defn generate-document [size]
-  (let [characters (cycle (map char (range 97 123)))
-        document-overhead 2
-        kv-overhead 5
-        additional-kv-overhead 1
-        minimum-kv-size 7
+  (let [document-overhead 2      ;; {}
+        kv-overhead 5            ;; "":""
+        additional-kv-overhead 1 ;; ,
+        minimum-kv-size 7        ;; "a":"b"
         minimum-document-size (+ document-overhead minimum-kv-size)
-        current-available-size (- size document-overhead)
         maximum-number-of-kvs
-        (loop [available-size current-available-size
+        (loop [available-size (- size document-overhead)
                number-of-kvs 0]
           (let [possible-additional-kv-overhead
                 (if (pos? number-of-kvs)
@@ -101,58 +153,45 @@
         total-overhead (+ document-overhead
                           (* number-of-kvs kv-overhead)
                           (* (- number-of-kvs 1) additional-kv-overhead))
-        current-available-size (+ document-overhead
-                                  (- current-available-size total-overhead))
-        _ (pprint [:available-size-minus-overhead current-available-size])
+        current-available-size (- size total-overhead)
+        ;; _ (pprint [:available-size-minus-overhead current-available-size])
         size-for-ks (+ (* 1 number-of-kvs)
                        (+ 1 (rand-int (- current-available-size (* 2 number-of-kvs)))))
-        _ (pprint [:size-for-ks size-for-ks])
-        generate-tokens
-        (fn generate-tokens [number-of-tokens total-available-size]
-          (loop [available-size total-available-size
-                 tokens []]
-            (let [tokens-to-go (- number-of-tokens (count tokens))
-                  minimum-required-size-for-rest tokens-to-go]
-              (if (zero? tokens-to-go)
-                tokens
-                (let [token-size (if (= 1 tokens-to-go)
-                                   available-size
-                                   (+ 1 (rand-int (- available-size
-                                                     minimum-required-size-for-rest))))
-                      token (apply str (take token-size characters))]
-                  (pprint {:tokens [(count tokens) tokens-to-go]
-                           :available-size available-size
-                           :token-size token-size
-                           :token token})
-                  (recur (- available-size token-size)
-                         (conj tokens token)))))))
-        ks (generate-tokens number-of-kvs size-for-ks)
+        ;; _ (pprint [:size-for-ks size-for-ks])
+        ks (generate-tokens generate-field-name
+                            number-of-kvs
+                            size-for-ks
+                            true)
         size-for-vs (- current-available-size size-for-ks)
-        _ (pprint [:size-for-vs size-for-vs])
-        vs (generate-tokens number-of-kvs size-for-vs)
+        ;; _ (pprint [:size-for-vs size-for-vs])
+        vs (generate-tokens generate-value
+                            number-of-kvs
+                            size-for-vs
+                            false)
         current-available-size (- current-available-size (reduce + (map count vs)))
-        _ (pprint [:available-size-minus-vs current-available-size])]
+        ;; _ (pprint [:available-size-minus-vs current-available-size])
+        ]
     (let [size-ks (reduce + (map count ks))
           size-vs (reduce + (map count vs))
           count-ks (count ks)
           count-vs (count vs)]
-      (pprint {:maximum-number-of-kvs maximum-number-of-kvs
-               :number-of-kvs number-of-kvs
-               :ks ks
-               :vs vs
-               :count-ks count-ks
-               :count-vs count-vs
-               :size-ks size-ks
-               :size-vs size-vs
-               :total-overhead total-overhead
-               :current-available-size current-available-size
-               :generated-size (+ total-overhead size-ks size-vs)
-               :size size
-               :size-ok? (= size (+ total-overhead size-ks size-vs))})
-      ;; keys have to be distinct...
-      (into {} (map vector ks vs)))))
+      {:maximum-number-of-kvs maximum-number-of-kvs
+       :number-of-kvs number-of-kvs
+       :ks ks
+       :vs vs
+       :count-ks count-ks
+       :count-vs count-vs
+       :size-ks size-ks
+       :size-vs size-vs
+       :total-overhead total-overhead
+       :current-available-size current-available-size
+       :generated-size (+ total-overhead size-ks size-vs)
+       :size size
+       :document (into {} (map vector ks vs))
+       :size-ok? (= size (+ total-overhead size-ks size-vs))})))
 
-(pprint (generate-document 100))
+;; (println (distinct
+;;           (take 1 (map :size-ok? (repeatedly (generate-document 1000))))))
 ;; 20 => rand 2 (- total-size minimum-size-for-rest)
 ;;       rand 2 (- total-size minimum-size-for-rest)
 
