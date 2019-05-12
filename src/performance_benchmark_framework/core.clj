@@ -4,11 +4,44 @@
             [clojure.pprint :refer [pprint]]
             [clojure.string :as string]
             [com.climate.claypoole :as cp]
+            [oz.core :as oz]
             [kixi.stats.core :as stats]
-            [kixi.stats.distribution :refer [quantile]]
+            [kixi.stats.distribution
+             :refer [quantile]
+             :as distribution]
             [qbits.spandex :as s]
             [taoensso.timbre :refer [info]])
   (:import (java.util Random)))
+
+(defn between? [min max n]
+  (<= min n max))
+
+(defn clipped-normal-distribution [sample-size mean standard-deviation min max]
+  (let [distribution* (distribution/normal {:mu mean :sd standard-deviation})]
+    (loop [sample-size sample-size
+           full-sample []]
+      (let [sample (->> distribution*
+                        (distribution/sample sample-size)
+                        (filter (partial between? min max)))
+            sample-count (count sample)
+            new-full-sample (into full-sample sample)]
+        (if (= sample-size sample-count)
+          new-full-sample
+          (recur (- sample-size sample-count) new-full-sample))))))
+
+(comment
+  (oz/export! {:data {:values (->> (repeatedly 100000 #(rand-normal-int 0
+                                                                        100
+                                                                        {:sd-skew -4}))
+
+                                   (map hash-map (repeat :x)))}
+               :mark "bar"
+               :encoding {:x {:bin {:binned true
+                                    :step 5}
+                              :field "x"}
+                          :y {:aggregate "count"
+                              :type "quantitative"}}}
+              "normal_distribution.html"))
 
 (defmacro runtime [body]
   `(let [start# (. System (nanoTime))
@@ -51,8 +84,9 @@
      :min (reduce stats/min xs)
      :max (reduce stats/max xs)
      :mean (transduce identity stats/mean xs)
-     :stddev (transduce identity stats/standard-deviation xs)
+     :sd (transduce identity stats/standard-deviation xs)
      :p50 (quantile distribution 0.50)
+     :p75 (quantile distribution 0.75)
      :p90 (quantile distribution 0.90)
      :p95 (quantile distribution 0.95)
      :p99 (quantile distribution 0.99)}))
@@ -104,26 +138,64 @@
                (repeatedly #(rand-nth (concat lowercase-alpha-numeric
                                               symbol*))))))
 
+(def non-zero? (complement zero?))
+
+(defn rand-normal [min* max* & [{:keys [skew sd-skew]
+                                 :or {skew 0
+                                      sd-skew 0}}]]
+  (assert (not (and (non-zero? skew)
+                    (non-zero? sd-skew)))
+          "Specify only one of 'skew' or 'sd-skew'")
+  (let [mean (/ (- max* min*) 2.0)
+        standard-deviation (/ (- mean min*) 3.0)
+        actual-skew (if (zero? sd-skew)
+                      skew
+                      (* standard-deviation sd-skew))
+        possibly-skewed-mean (+ mean actual-skew)
+        sample-size 1]
+    (first
+     (clipped-normal-distribution
+      sample-size possibly-skewed-mean standard-deviation min* max*))))
+
+(defn rand-normal-int [& args]
+  (Math/round (apply rand-normal args)))
+
 (defn generate-tokens
-  [generator number-of-tokens total-available-size unique?]
-  (loop [available-size total-available-size
+  [generator number-of-tokens available-size unique?]
+  (loop [available-size available-size
          tokens (if unique? #{} [])]
     (let [tokens-to-go (- number-of-tokens (count tokens))
           minimum-required-size-for-rest tokens-to-go]
-      ;; in case of `unique?` maybe check instead if it's even possible to
+      ;; In case of `unique?` maybe check instead if it's even possible to
       ;; generate more unique tokens.
       (if (zero? tokens-to-go)
         tokens
         (let [token-size (if (= 1 tokens-to-go)
                            available-size
-                           (inc (rand-int (- available-size
-                                             minimum-required-size-for-rest))))
+                           (let [min* 1
+                                 max* (- available-size
+                                         minimum-required-size-for-rest)
+                                 soft-max* (float (min (/ available-size tokens-to-go)
+                                                       max*))
+                                 desired-mean (inc (/ (- soft-max* min*)
+                                                      2.0))
+                                 standard-deviation (Math/abs (/ (- desired-mean min*) 3.0))
+                                 s (first
+                                    (clipped-normal-distribution
+                                     1 desired-mean standard-deviation 1 max*))]
+                             ;; (pprint {:max max*
+                             ;;          :soft-max soft-max*
+                             ;;          :desired-mean desired-mean
+                             ;;          :s s
+                             ;;          :standard-deviation standard-deviation})
+                             (Math/round s)))
               token (apply str (generator token-size))]
           ;; (pprint {:tokens [(count tokens) tokens-to-go]
           ;;          :available-size available-size
           ;;          :token-size token-size
           ;;          :token token})
           (if (and unique? (contains? tokens token))
+            ;; This might recur forever.
             (recur available-size tokens)
             (recur (- available-size token-size)
                    (conj tokens token))))))))
@@ -137,26 +209,29 @@
         maximum-number-of-kvs
         (loop [available-size (- size document-overhead)
                number-of-kvs 0]
-          (let [possible-additional-kv-overhead
-                (if (pos? number-of-kvs)
-                  1
-                  0)
-                available-size-with-another-kv
-                (- available-size
-                   (+ minimum-kv-size
-                      possible-additional-kv-overhead))]
+          (let [possible-additional-kv-overhead (if (pos? number-of-kvs)
+                                                  1
+                                                  0)
+                available-size-with-another-kv (- available-size
+                                                  (+ minimum-kv-size
+                                                     possible-additional-kv-overhead))]
             (if (> 0 available-size-with-another-kv)
               number-of-kvs
               (recur available-size-with-another-kv
                      (inc number-of-kvs)))))
-        number-of-kvs (+ 1 (rand-int maximum-number-of-kvs))
+        number-of-kvs (rand-normal-int 1 maximum-number-of-kvs)
         total-overhead (+ document-overhead
                           (* number-of-kvs kv-overhead)
                           (* (- number-of-kvs 1) additional-kv-overhead))
         current-available-size (- size total-overhead)
         ;; _ (pprint [:available-size-minus-overhead current-available-size])
-        size-for-ks (+ (* 1 number-of-kvs)
-                       (+ 1 (rand-int (- current-available-size (* 2 number-of-kvs)))))
+        minimum-token-size 1
+        minimum-size-for-ks (* minimum-token-size number-of-kvs)
+        minimum-size-for-vs (* minimum-token-size number-of-kvs)
+        maximum-size-for-ks (- current-available-size minimum-size-for-vs)
+        size-for-ks (rand-normal-int minimum-size-for-ks
+                                     maximum-size-for-ks
+                                     {:sd-skew -2})
         ;; _ (pprint [:size-for-ks size-for-ks])
         ks (generate-tokens generate-field-name
                             number-of-kvs
@@ -181,6 +256,8 @@
        :vs vs
        :count-ks count-ks
        :count-vs count-vs
+       :size-for-ks size-for-ks
+       :size-for-vs size-for-vs
        :size-ks size-ks
        :size-vs size-vs
        :total-overhead total-overhead
@@ -190,8 +267,8 @@
        :document (into {} (map vector ks vs))
        :size-ok? (= size (+ total-overhead size-ks size-vs))})))
 
-;; (println (distinct
-;;           (take 1 (map :size-ok? (repeatedly (generate-document 1000))))))
+(pprint (take 1 (repeatedly #(generate-document 1000))))
+
 ;; 20 => rand 2 (- total-size minimum-size-for-rest)
 ;;       rand 2 (- total-size minimum-size-for-rest)
 

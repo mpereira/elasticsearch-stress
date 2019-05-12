@@ -7,6 +7,10 @@
 
 ** Infrastructure
    https://docs.confluent.io/current/quickstart/ce-docker-quickstart.html
+   https://www.terraform.io/docs/providers/aws/d/instance.html
+   https://learn.hashicorp.com/terraform/getting-started/build.html
+   https://sweetcode.io/deploying-aws-ec2-instance-using-terraform/
+   https://sweetcode.io/deploying-aws-ec2-instance-using-terraform/
 
 ** CLI
    https://github.com/l3nz/cli-matic

@@ -5,6 +5,7 @@
             :url "https://www.eclipse.org/legal/epl-2.0/"}
   :dependencies [[org.clojure/clojure "1.10.0"]
 
+                 [metasoarous/oz "1.5.6"]
                  [cc.qbits/spandex "0.7.0-beta3"]
                  [cheshire "5.8.1"]
                  [clojurewerkz/elastisch "3.0.1"]
