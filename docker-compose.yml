@@ -1,22 +1,24 @@
-version: '2.2'
+version: '3'
 
 volumes:
-  es-data-1:
+  elasticsearch-data-0:
     driver: local
-  es-data-2:
+  elasticsearch-data-1:
+    driver: local
+  grafana:
     driver: local
 
 networks:
   shared-network:
 
 services:
-  es-data-1:
+  elasticsearch-data-0:
     image: docker.elastic.co/elasticsearch/elasticsearch:7.0.1
-    container_name: es-data-1
+    container_name: elasticsearch-data-0
     environment:
-      - node.name=es-data-1
-      - discovery.seed_hosts=es-data-2
-      - cluster.initial_master_nodes=es-data-1,es-data-2
+      - node.name=elasticsearch-data-0
+      - discovery.seed_hosts=elasticsearch-data-1
+      - cluster.initial_master_nodes=elasticsearch-data-0,elasticsearch-data-1
       - cluster.name=docker-cluster
       - bootstrap.memory_lock=true
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
@@ -25,19 +27,19 @@ services:
         soft: -1
         hard: -1
     volumes:
-      - es-data-1:/usr/share/elasticsearch/data
+      - elasticsearch-data-0:/usr/share/elasticsearch/data
     ports:
       - 9200:9200
     networks:
       - shared-network
 
-  es-data-2:
+  elasticsearch-data-1:
     image: docker.elastic.co/elasticsearch/elasticsearch:7.0.1
-    container_name: es-data-2
+    container_name: elasticsearch-data-1
     environment:
-      - node.name=es-data-2
-      - discovery.seed_hosts=es-data-1
-      - cluster.initial_master_nodes=es-data-1,es-data-2
+      - node.name=elasticsearch-data-1
+      - discovery.seed_hosts=elasticsearch-data-0
+      - cluster.initial_master_nodes=elasticsearch-data-0,elasticsearch-data-1
       - cluster.name=docker-cluster
       - bootstrap.memory_lock=true
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
@@ -46,7 +48,7 @@ services:
         soft: -1
         hard: -1
     volumes:
-      - es-data-2:/usr/share/elasticsearch/data
+      - elasticsearch-data-1:/usr/share/elasticsearch/data
     ports:
       - 9201:9200
     networks:
@@ -265,6 +267,8 @@ services:
     container_name: grafana
     networks:
       - shared-network
+    volumes:
+      - grafana:/var/lib/grafana
     ports:
       - 3000:3000
 
@@ -280,11 +284,22 @@ services:
   #     - 9308:9308
   #   command: --kafka.server=broker:29092
 
+  # node-prometheus-exporter:
+  #   image: quay.io/prometheus/node-exporter:v0.18.0
+  #   container_name: node-prometheus-exporter
+  #   command:
+  #     - "-es.uri=http://node-data-0:9200"
+  #     - "-es.all=true"
+  #   networks:
+  #     - shared-network
+  #   ports:
+  #     - 9108:9108
+
   elasticsearch-prometheus-exporter:
     image: justwatch/elasticsearch_exporter:1.0.2
     container_name: elasticsearch-prometheus-exporter
     command:
-      - "-es.uri=http://es-data-1:9200"
+      - "-es.uri=http://elasticsearch-data-0:9200"
       - "-es.all=true"
     networks:
       - shared-network

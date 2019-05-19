@@ -13,6 +13,8 @@
             [taoensso.timbre :refer [info]])
   (:import (java.util Random)))
 
+(defn pprint-str [x] (with-out-str (pprint x)))
+
 (defn between? [min max n]
   (<= min n max))
 
@@ -29,20 +31,6 @@
           new-full-sample
           (recur (- sample-size sample-count) new-full-sample))))))
 
-(comment
-  (oz/export! {:data {:values (->> (repeatedly 100000 #(rand-normal-int 0
-                                                                        100
-                                                                        {:sd-skew -4}))
-
-                                   (map hash-map (repeat :x)))}
-               :mark "bar"
-               :encoding {:x {:bin {:binned true
-                                    :step 5}
-                              :field "x"}
-                          :y {:aggregate "count"
-                              :type "quantitative"}}}
-              "normal_distribution.html"))
-
 (defmacro runtime [body]
   `(let [start# (. System (nanoTime))
          result# ~body]
@@ -53,6 +41,7 @@
 
 (defn create-document
   ([client index-name document]
+   (pprint document)
    (-> (s/request client {:url [index-name :_doc]
                           :method :post
                           :body document})))
@@ -95,20 +84,6 @@
   ((make-bulk-operation (fn [document] [{:index {}} document]))
    client index-name documents))
 
-;; {} - 2
-
-;; {"a":0} - 7
-;; {"a":""} - 8
-;; {"a":"x"} - 9
-
-;; {"a":0,"b":0} - 13
-;; {"a":"","b":""} - 15
-;; {"a":"x","b":"y"} - 17
-
-;; {"a":0,"b":0,"c":0} - 19
-;; {"a":"","b":"","c":""} - 22
-;; {"a":"x","b":"y","c":"z"} - 25
-
 (def digit (range 0 10))
 
 (def lowercase-alpha (map char (range (int \a) (inc (int \z)))))
@@ -126,7 +101,7 @@
 (def upper-and-lowercase-alpha-numeric
   (concat uppercase-alpha lowercase-alpha-numeric))
 
-(defn generate-field-name [size]
+(defn generate-field [size]
   (apply str
          (rand-nth lowercase-alpha)
          (take (dec size)
@@ -161,7 +136,8 @@
   (Math/round (apply rand-normal args)))
 
 (defn generate-tokens
-  [generator number-of-tokens available-size unique?]
+  [generator number-of-tokens available-size & [{:keys [unique?]
+                                                 :or {unique? false}}]]
   (loop [available-size available-size
          tokens (if unique? #{} [])]
     (let [tokens-to-go (- number-of-tokens (count tokens))
@@ -183,34 +159,26 @@
                                  s (first
                                     (clipped-normal-distribution
                                      1 desired-mean standard-deviation 1 max*))]
-                             ;; (pprint {:max max*
-                             ;;          :soft-max soft-max*
-                             ;;          :desired-mean desired-mean
-                             ;;          :s s
-                             ;;          :standard-deviation standard-deviation})
                              (Math/round s)))
               token (apply str (generator token-size))]
-          ;; (pprint {:tokens [(count tokens) tokens-to-go]
-          ;;          :available-size available-size
-          ;;          :token-size token-size
-          ;;          :token token})
           (if (and unique? (contains? tokens token))
             ;; This might recur forever.
             (recur available-size tokens)
             (recur (- available-size token-size)
                    (conj tokens token))))))))
 
-(defn generate-document [size]
+(defn generate-fields [document-size]
   (let [document-overhead 2      ;; {}
+        minimum-token-size 1     ;; a
         kv-overhead 5            ;; "":""
         additional-kv-overhead 1 ;; ,
         minimum-kv-size 7        ;; "a":"b"
         minimum-document-size (+ document-overhead minimum-kv-size)
         maximum-number-of-kvs
-        (loop [available-size (- size document-overhead)
+        (loop [available-size (- document-size document-overhead)
                number-of-kvs 0]
           (let [possible-additional-kv-overhead (if (pos? number-of-kvs)
-                                                  1
+                                                  additional-kv-overhead
                                                   0)
                 available-size-with-another-kv (- available-size
                                                   (+ minimum-kv-size
@@ -219,61 +187,36 @@
               number-of-kvs
               (recur available-size-with-another-kv
                      (inc number-of-kvs)))))
-        number-of-kvs (rand-normal-int 1 maximum-number-of-kvs)
+        number-of-kvs (rand-normal-int 1 maximum-number-of-kvs {:sd-skew -2})
         total-overhead (+ document-overhead
                           (* number-of-kvs kv-overhead)
                           (* (- number-of-kvs 1) additional-kv-overhead))
-        current-available-size (- size total-overhead)
-        ;; _ (pprint [:available-size-minus-overhead current-available-size])
-        minimum-token-size 1
+        current-available-size (- document-size total-overhead)
         minimum-size-for-ks (* minimum-token-size number-of-kvs)
-        minimum-size-for-vs (* minimum-token-size number-of-kvs)
+        minimum-size-for-vs minimum-size-for-ks
         maximum-size-for-ks (- current-available-size minimum-size-for-vs)
         size-for-ks (rand-normal-int minimum-size-for-ks
                                      maximum-size-for-ks
                                      {:sd-skew -2})
-        ;; _ (pprint [:size-for-ks size-for-ks])
-        ks (generate-tokens generate-field-name
-                            number-of-kvs
-                            size-for-ks
-                            true)
-        size-for-vs (- current-available-size size-for-ks)
-        ;; _ (pprint [:size-for-vs size-for-vs])
-        vs (generate-tokens generate-value
-                            number-of-kvs
-                            size-for-vs
-                            false)
-        current-available-size (- current-available-size (reduce + (map count vs)))
-        ;; _ (pprint [:available-size-minus-vs current-available-size])
-        ]
-    (let [size-ks (reduce + (map count ks))
-          size-vs (reduce + (map count vs))
-          count-ks (count ks)
-          count-vs (count vs)]
-      {:maximum-number-of-kvs maximum-number-of-kvs
-       :number-of-kvs number-of-kvs
-       :ks ks
-       :vs vs
-       :count-ks count-ks
-       :count-vs count-vs
-       :size-for-ks size-for-ks
-       :size-for-vs size-for-vs
-       :size-ks size-ks
-       :size-vs size-vs
-       :total-overhead total-overhead
-       :current-available-size current-available-size
-       :generated-size (+ total-overhead size-ks size-vs)
-       :size size
-       :document (into {} (map vector ks vs))
-       :size-ok? (= size (+ total-overhead size-ks size-vs))})))
+        size-for-vs (- current-available-size size-for-ks)]
+    {:fields (generate-tokens generate-field number-of-kvs size-for-ks {:unique? true})
+     :size-remaining-for-values size-for-vs}))
 
-(pprint (take 1 (repeatedly #(generate-document 1000))))
+(defn generate-mapping [document-size]
+  (let [{:keys [fields size-remaining-for-values]} (generate-fields document-size)]
+    {:mapping {:properties (reduce (fn [properties field]
+                                     (assoc properties field {:type "keyword"}))
+                                   {}
+                                   fields)}
+     :size-remaining-for-values size-remaining-for-values}))
 
-;; 20 => rand 2 (- total-size minimum-size-for-rest)
-;;       rand 2 (- total-size minimum-size-for-rest)
+(defn generate-document [{:keys [properties] :as mapping} available-size]
+  (let [values (generate-tokens generate-value (count properties) available-size)]
+    (into {} (map vector (keys properties) values))))
 
-(defn generate-document-batches [documents bulk-size]
-  (->> (repeatedly documents generate-document)
+(defn generate-document-batches
+  [number-of-documents bulk-size document-size mapping size-for-values]
+  (->> (repeatedly number-of-documents #(generate-document mapping size-for-values))
        (partition-all bulk-size)))
 
 (defn process-bulk-batch [client index-name batch]
@@ -319,71 +262,118 @@
      :successful successful
      :failed failed}))
 
-(defn run [{:keys [hosts documents bulk bulk-size index-name threads]
-            :or {hosts ["http://localhost:9200"]
-                 bulk false
+(defn run [{:keys [bulk
+                   bulk-size
+                   document-size
+                   documents
+                   hosts
+                   index-name
+                   threads]
+            :or {bulk false
                  bulk-size 50
-                 threads 1
-                 index-name "elasticsearch-stress"}}]
-  (info "")
-  (info "Documents:" documents)
-  (info "Index name:" index-name)
-  (info "Bulk size:" bulk-size)
-  (info "Bulk:" bulk)
-  (info "")
-  (info "Starting load")
-  (let [client (s/client {:hosts ["http://localhost:9200"
-                                  "http://localhost:9201"]})
-        pool (cp/threadpool threads :name "document-indexer")
-        {total-runtime-ms :runtime-ms
-         outcomes :value}
-        (runtime
-         (if bulk
-           (->> (generate-document-batches documents bulk-size)
-                (cp/pmap pool (partial process-bulk-batch client index-name))
-                (reduce (partial merge-with into)
-                        {:runtime-ms []
-                         :took []
-                         :bulk-status []
-                         :status []
-                         :total []
-                         :successful []
-                         :failed []
-                         :result []}))
-           (->> (repeatedly documents generate-document)
-                (cp/pmap pool (partial process-document client index-name))
-                (reduce (partial merge-with conj)
-                        {:runtime-ms []
-                         :status []
-                         :total []
-                         :successful []
-                         :failed []}))))
-        report (-> outcomes
-                   (update :runtime-ms statistics)
-                   (update :bulk-status frequencies)
-                   (update :status frequencies)
-                   (update :result frequencies)
-                   (update :took statistics)
-                   (update :total (partial reduce +))
-                   (update :successful (partial reduce +))
-                   (update :failed (partial reduce +)))]
-    (info (with-out-str (pprint report)))
-    (info "Total runtime:" (format "%.2fms" total-runtime-ms))
-    (cp/shutdown pool))
-  (info "Ended load"))
+                 document-size 500 ;; size of JSON object in bytes.
+                 hosts ["http://localhost:9200"]
+                 index-name "elasticsearch-stress"
+                 threads 1}}]
+  (let [{:keys [mapping size-remaining-for-values]} (generate-mapping document-size)]
+    (info "")
+    (info "Documents:" documents)
+    (info "Document size:" document-size)
+    (info "Index name:" index-name)
+    (info "Bulk size:" bulk-size)
+    (info "Bulk:" bulk)
+    (info "Mapping:" (pprint-str mapping))
+    (info "")
+    (info "Starting load")
+    (let [client (s/client {:hosts ["http://localhost:9200"
+                                    "http://localhost:9201"]})
+          pool (cp/threadpool threads :name "document-indexer")
+          {total-runtime-ms :runtime-ms
+           outcomes :value}
+          (runtime
+           (if bulk
+             (->> (generate-document-batches documents
+                                             bulk-size
+                                             document-size
+                                             mapping
+                                             size-remaining-for-values)
+                  (cp/pmap pool (partial process-bulk-batch client index-name))
+                  (reduce (partial merge-with into)
+                          {:runtime-ms []
+                           :took []
+                           :bulk-status []
+                           :status []
+                           :total []
+                           :successful []
+                           :failed []
+                           :result []}))
+             (let [documents* (repeatedly documents
+                                          #(generate-document
+                                            mapping size-remaining-for-values))]
+               (->> documents*
+                    (cp/pmap pool (partial process-document client index-name))
+                    (reduce (partial merge-with conj)
+                            {:runtime-ms []
+                             :status []
+                             :total []
+                             :successful []
+                             :failed []})))))
+          report (-> outcomes
+                     (update :runtime-ms statistics)
+                     (update :bulk-status frequencies)
+                     (update :status frequencies)
+                     (update :result frequencies)
+                     (update :took statistics)
+                     (update :total (partial reduce +))
+                     (update :successful (partial reduce +))
+                     (update :failed (partial reduce +)))]
+      (info (with-out-str (pprint report)))
+      (info "Total runtime:" (format "%.2fms" total-runtime-ms))
+      (cp/shutdown pool))
+    (info "Ended load")))
+
+(comment
+  (let [{:keys [fields size-remaining-for-values]} (generate-fields 500)]
+    (pprint (take 5 (repeatedly #(generate-document fields size-remaining-for-values)))))
+
+  (pprint (s/request (s/client {:hosts ["http://localhost:9200"
+                                        "http://localhost:9201"]})
+                     {:url [:elasticsearch-stress]
+                      :method :get}))
+  (pprint (s/request (s/client {:hosts ["http://localhost:9200"
+                                        "http://localhost:9201"]})
+                     {:url [:_search]
+                      :method :get
+                      :body {:query {:match_all {}}}}))
+  (pprint (create-document (s/client {:hosts ["http://localhost:9200"
+                                              "http://localhost:9201"]})
+                           :elasticsearch-stress
+                           {:foo "foo"
+                            :bar "bar"}))
+  (pprint (s/request (s/client {:hosts ["http://localhost:9200"
+                                        "http://localhost:9201"]})
+                     {:url [:elasticsearch-stress]
+                      :method :delete}))
+
+  (oz/export! {:data {:values (->> (repeatedly 100000 #(rand-normal-int 0
+                                                                        100
+                                                                        {:sd-skew -2}))
+
+                                   (map hash-map (repeat :x)))}
+               :mark "bar"
+               :encoding {:x {:bin {:binned true
+                                    :step 5}
+                              :field "x"}
+                          :y {:aggregate "count"
+                              :type "quantitative"}}}
+              "normal_distribution.html"))
 
 (defn -main
   [& args]
-  (comment
-    (pprint (create client))
-    (pprint (s/request client {:url [:_search]
-                               :method :get
-                               :body {:query {:match_all {}}}})))
-
-  (run {:hosts ["http://localhost:9200"
-                "http://localhost:9201"]
-        :documents 10
-        :threads 8
-        :bulk false
-        :bulk-size 10
-        :index-name "elasticsearch-stress"}))
+  (run {:bulk true
+        :bulk-size 5000
+        :document-size 1000
+        :documents 10000
+        :hosts ["http://localhost:9200" "http://localhost:9201"]
+        :index-name "elasticsearch-stress"
+        :threads 16}))

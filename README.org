@@ -10,7 +10,6 @@
    https://www.terraform.io/docs/providers/aws/d/instance.html
    https://learn.hashicorp.com/terraform/getting-started/build.html
    https://sweetcode.io/deploying-aws-ec2-instance-using-terraform/
-   https://sweetcode.io/deploying-aws-ec2-instance-using-terraform/
 
 ** CLI
    https://github.com/l3nz/cli-matic
@@ -27,18 +26,6 @@
 ** Options
 
    FIXME: listing of options this app accepts.
-
-** Examples
-
-   TODO
-
-*** Bugs
-
-   TODO
-
-*** Any Other Sections
-*** That You Think
-*** Might be Useful
 
 ** Commands
 
