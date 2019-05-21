@@ -371,9 +371,9 @@
 (defn -main
   [& args]
   (run {:bulk true
-        :bulk-size 5000
+        :bulk-size 500
         :document-size 1000
-        :documents 10000
+        :documents 1000
         :hosts ["http://localhost:9200" "http://localhost:9201"]
         :index-name "elasticsearch-stress"
-        :threads 16}))
+        :threads 2}))

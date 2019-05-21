@@ -39,7 +39,41 @@
      --print-metrics
    #+end_src
 
+   #+begin_src bash
+   ./graalvm-ce-19.0.0/Contents/Home/bin/gu install native-image
+   #+end_src
+
+   #+begin_src bash
+   ./graalvm-ce-19.0.0/Contents/Home/bin/native-image \
+     -H:+ReportUnsupportedElementsAtRuntime \
+     -J-Xmx3G \
+     -J-Xms3G \
+     --no-server \
+     -jar target/uberjar/performance-benchmark-framework-0.1.0-SNAPSHOT-standalone.jar
+   #+end_src
+
    #+RESULTS:
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:30665] | classlist:  | 19,590.36   | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:30665] | (cap):      | 2,101.31    | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:30665] | setup:      | 3,808.44    | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:30665] | analysis:   | 36,806.07   | ms     |       |         |
+   | Build                                                             | on          | Server(pid: | 31430, | port: | 64599)* |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | classlist:  | 5,089.69    | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | (cap):      | 1,279.61    | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | setup:      | 2,744.52    | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | (typeflow): | 2,259.01    | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | (objects):  | 813.92      | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | (features): | 182.39      | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | analysis:   | 3,342.72    | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | (clinit):   | 85.57       | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | universe:   | 275.78      | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | (parse):    | 264.96      | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | (inline):   | 1,090.04    | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | (compile):  | 4,024.48    | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | compile:    | 5,602.26    | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | image:      | 323.37      | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | write:      | 146.22      | ms     |       |         |
+   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | [total]:    | 17,656.85   | ms     |       |         |
 
 ** License
 
