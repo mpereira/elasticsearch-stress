@@ -101,17 +101,37 @@
 (def upper-and-lowercase-alpha-numeric
   (concat uppercase-alpha lowercase-alpha-numeric))
 
+(def generate-field-language (concat lowercase-alpha lowercase-alpha-numeric))
+
+(def generate-field-language-size (count (set generate-field-language)))
+
 (defn generate-field [size]
+  {:pre [(or (zero? size) (pos? size))]}
   (apply str
-         (rand-nth lowercase-alpha)
+         (when (pos? size) (rand-nth lowercase-alpha))
          (take (dec size)
                (repeatedly #(rand-nth lowercase-alpha-numeric)))))
 
+(def generate-value-language (concat lowercase-alpha-numeric symbol*))
+
+(def generate-value-language-size (count (set generate-value-language)))
+
 (defn generate-value [size]
-  (apply str
-         (take size
-               (repeatedly #(rand-nth (concat lowercase-alpha-numeric
-                                              symbol*))))))
+  {:pre [(or (zero? size) (pos? size))]}
+  (apply str (take size (repeatedly #(rand-nth generate-value-language)))))
+
+(def generate-foo-language (range 20))
+
+(def generate-foo-language-size (count (set generate-foo-language)))
+
+(defn generate-foo [size]
+  {:pre [(or (zero? size) (pos? size))]}
+  (apply str (take size (repeatedly #(rand-nth generate-foo-language)))))
+
+(def generator-language-sizes
+  {generate-field generate-field-language-size
+   generate-value generate-value-language-size
+   generate-foo generate-foo-language-size})
 
 (def non-zero? (complement zero?))
 
@@ -138,34 +158,38 @@
 (defn generate-tokens
   [generator number-of-tokens available-size & [{:keys [unique?]
                                                  :or {unique? false}}]]
-  (loop [available-size available-size
-         tokens (if unique? #{} [])]
-    (let [tokens-to-go (- number-of-tokens (count tokens))
-          minimum-required-size-for-rest tokens-to-go]
-      ;; In case of `unique?` maybe check instead if it's even possible to
-      ;; generate more unique tokens.
-      (if (zero? tokens-to-go)
-        tokens
-        (let [token-size (if (= 1 tokens-to-go)
-                           available-size
-                           (let [min* 1
-                                 max* (- available-size
-                                         minimum-required-size-for-rest)
-                                 soft-max* (float (min (/ available-size tokens-to-go)
-                                                       max*))
-                                 desired-mean (inc (/ (- soft-max* min*)
-                                                      2.0))
-                                 standard-deviation (Math/abs (/ (- desired-mean min*) 3.0))
-                                 s (first
-                                    (clipped-normal-distribution
-                                     1 desired-mean standard-deviation 1 max*))]
-                             (Math/round s)))
-              token (apply str (generator token-size))]
-          (if (and unique? (contains? tokens token))
-            ;; This might recur forever.
-            (recur available-size tokens)
-            (recur (- available-size token-size)
-                   (conj tokens token))))))))
+  (let [generator-language-size (get generator-language-sizes generator)]
+    ;; TODO: check all possible combinations of size using language.
+    ;;
+    ;; Also: generate-tokens can only generate 26 distinct single "character"
+    ;; tokens because its tokens must start with a lowercase-alpha.
+    (if (and unique? (> number-of-tokens generator-language-size))
+      (do
+        (info "Can't generate" number-of-tokens "tokens with language of size" generator-language-size)
+        (if unique? #{} []))
+      (loop [available-size available-size
+             tokens (if unique? #{} [])]
+        (let [minimum-token-size 1
+              tokens-to-go (- number-of-tokens (count tokens))]
+          (if (zero? tokens-to-go)
+            tokens
+            (let [minimum-required-size (* minimum-token-size tokens-to-go)
+                  minimum-required-size-for-rest (- minimum-required-size minimum-token-size)
+                  token-size (if (= 1 tokens-to-go)
+                               available-size
+                               (let [min* minimum-token-size
+                                     max* (- available-size minimum-required-size-for-rest)
+                                     desired-mean (inc (/ (- max* min*) 2.0))
+                                     standard-deviation (Math/abs (/ (- desired-mean min*) 3.0))
+                                     s (first
+                                        (clipped-normal-distribution
+                                         1 desired-mean standard-deviation min* max*))]
+                                 (Math/round s)))
+                  token (generator token-size)]
+              (if (and unique? (contains? tokens token))
+                (recur available-size tokens)
+                (recur (- available-size token-size)
+                       (conj tokens token))))))))))
 
 (defn generate-fields [document-size]
   (let [document-overhead 2      ;; {}
@@ -211,8 +235,8 @@
      :size-remaining-for-values size-remaining-for-values}))
 
 (defn generate-document [{:keys [properties] :as mapping} available-size]
-  (let [values (generate-tokens generate-value (count properties) available-size)]
-    (into {} (map vector (keys properties) values))))
+  (let [generator-outputs (generate-tokens generate-value (count properties) available-size)]
+    (into {} (map vector (keys properties) generator-outputs))))
 
 (defn generate-document-batches
   [number-of-documents bulk-size document-size mapping size-for-values]
@@ -328,7 +352,9 @@
                      (update :successful (partial reduce +))
                      (update :failed (partial reduce +)))]
       (info (with-out-str (pprint report)))
-      (info "Total runtime:" (format "%.2fms" total-runtime-ms))
+      (info "Total Elasticsearch 'took' runtime:"
+            (format "%dms" (get-in report [:took :total])))
+      (info "Total observed runtime:" (format "%.2fms" total-runtime-ms))
       (cp/shutdown pool))
     (info "Ended load")))
 
@@ -373,7 +399,7 @@
   (run {:bulk true
         :bulk-size 500
         :document-size 1000
-        :documents 1000
+        :documents 5000
         :hosts ["http://localhost:9200" "http://localhost:9201"]
         :index-name "elasticsearch-stress"
-        :threads 2}))
+        :threads 4}))
