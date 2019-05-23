@@ -155,6 +155,11 @@
 (defn rand-normal-int [& args]
   (Math/round (apply rand-normal args)))
 
+(defn estimated-standard-deviation
+  "Range Rule for standard deviations."
+  [min* max*]
+  (/ (- max* min*) 4.0))
+
 (defn generate-tokens
   [generator number-of-tokens available-size & [{:keys [unique?]
                                                  :or {unique? false}}]]
@@ -163,9 +168,14 @@
     ;;
     ;; Also: generate-tokens can only generate 26 distinct single "character"
     ;; tokens because its tokens must start with a lowercase-alpha.
+    ;;
+    ;; When `unique?` is `true`, maybe have a stateful generator and actually
+    ;; remove elements from it while `take`ing? Would this work for
+    ;; multi-character tokens?
     (if (and unique? (> number-of-tokens generator-language-size))
       (do
-        (info "Can't generate" number-of-tokens "tokens with language of size" generator-language-size)
+        (info "Can't generate" number-of-tokens "tokens with language of size"
+              generator-language-size)
         (if unique? #{} []))
       (loop [available-size available-size
              tokens (if unique? #{} [])]
@@ -174,17 +184,29 @@
           (if (zero? tokens-to-go)
             tokens
             (let [minimum-required-size (* minimum-token-size tokens-to-go)
-                  minimum-required-size-for-rest (- minimum-required-size minimum-token-size)
-                  token-size (if (= 1 tokens-to-go)
-                               available-size
-                               (let [min* minimum-token-size
-                                     max* (- available-size minimum-required-size-for-rest)
-                                     desired-mean (inc (/ (- max* min*) 2.0))
-                                     standard-deviation (Math/abs (/ (- desired-mean min*) 3.0))
-                                     s (first
-                                        (clipped-normal-distribution
-                                         1 desired-mean standard-deviation min* max*))]
-                                 (Math/round s)))
+                  minimum-required-size-for-rest (- minimum-required-size
+                                                    minimum-token-size)
+                  token-size
+                  (if (= 1 tokens-to-go)
+                    available-size
+                    (let [min* minimum-token-size
+                          max* (- available-size
+                                  minimum-required-size-for-rest)
+                          ;; Why `inc`? Removing it causes the
+                          ;; function to loop forever in some cases.
+                          range* (- max* min*)
+                          desired-mean (if (zero? range*)
+                                         (/ max* 2.0)
+                                         (/ (Math/abs range*) 2.0))
+                          standard-deviation (Math/abs
+                                              (estimated-standard-deviation
+                                               max* min*))]
+                      (Math/round (first (clipped-normal-distribution
+                                          1
+                                          desired-mean
+                                          standard-deviation
+                                          min*
+                                          max*)))))
                   token (generator token-size)]
               (if (and unique? (contains? tokens token))
                 (recur available-size tokens)
