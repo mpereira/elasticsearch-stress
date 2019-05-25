@@ -28,9 +28,28 @@
         (is (<= min n max))))))
 
 (deftest generate-tokens-test
-  (dorun
-   (for [number-of-tokens (range 10)
-         available-size (range 10)]
-     (generate-tokens generate-field number-of-tokens available-size))))
+  (let [iterations 40]
+    (dorun
+     (for [generator [generate-field generate-value]
+           unique? [false true]
+           number-of-tokens (range iterations)
+           i (range iterations)]
+       (let [available-size (* (+ i 1) number-of-tokens)
+             {:keys [error] :as tokens} (generate-tokens generator
+                                                         number-of-tokens
+                                                         available-size
+                                                         {:unique? unique?})]
+         (is (= nil error)
+             {:generator generator
+              :unique? unique?
+              :number-of-tokens number-of-tokens
+              :available-size available-size}))))))
 
-(generate-tokens generate-value 40 40 {:unique? true})
+(generate-value 100)
+
+(generate-foo 10)
+
+(generate-tokens generate-foo 5 4 {:unique? true})
+
+(clojure.pprint/pprint
+ (generate-tokens generate-field 27 300 {:unique? true}))

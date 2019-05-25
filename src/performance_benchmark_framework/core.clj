@@ -19,6 +19,7 @@
   (<= min n max))
 
 (defn clipped-normal-distribution [sample-size mean standard-deviation min max]
+  {:pre [(<= min max)]}
   (let [distribution* (distribution/normal {:mu mean :sd standard-deviation})]
     (loop [sample-size sample-size
            full-sample []]
@@ -120,7 +121,7 @@
   {:pre [(or (zero? size) (pos? size))]}
   (apply str (take size (repeatedly #(rand-nth generate-value-language)))))
 
-(def generate-foo-language (range 20))
+(def generate-foo-language (range 4))
 
 (def generate-foo-language-size (count (set generate-foo-language)))
 
@@ -163,55 +164,57 @@
 (defn generate-tokens
   [generator number-of-tokens available-size & [{:keys [unique?]
                                                  :or {unique? false}}]]
-  (let [generator-language-size (get generator-language-sizes generator)]
-    ;; TODO: check all possible combinations of size using language.
-    ;;
-    ;; Also: generate-tokens can only generate 26 distinct single "character"
-    ;; tokens because its tokens must start with a lowercase-alpha.
-    ;;
-    ;; When `unique?` is `true`, maybe have a stateful generator and actually
-    ;; remove elements from it while `take`ing? Would this work for
-    ;; multi-character tokens?
-    (if (and unique? (> number-of-tokens generator-language-size))
-      (do
-        (info "Can't generate" number-of-tokens "tokens with language of size"
-              generator-language-size)
-        (if unique? #{} []))
-      (loop [available-size available-size
-             tokens (if unique? #{} [])]
-        (let [minimum-token-size 1
-              tokens-to-go (- number-of-tokens (count tokens))]
-          (if (zero? tokens-to-go)
-            tokens
-            (let [minimum-required-size (* minimum-token-size tokens-to-go)
-                  minimum-required-size-for-rest (- minimum-required-size
-                                                    minimum-token-size)
-                  token-size
+  (loop [available-size available-size
+         tokens (if unique? #{} [])
+         unique-attempts-remaining 1000]
+    (let [minimum-token-size 1
+          tokens-to-go (- number-of-tokens (count tokens))]
+      (if (and unique? (zero? unique-attempts-remaining))
+        {:error [:unable-to-generate-tokens :ran-out-of-attempts]}
+        (if (zero? tokens-to-go)
+          tokens
+          (let [token-size
+                (if (zero? available-size)
+                  0
                   (if (= 1 tokens-to-go)
                     available-size
-                    (let [min* minimum-token-size
-                          max* (- available-size
-                                  minimum-required-size-for-rest)
-                          ;; Why `inc`? Removing it causes the
-                          ;; function to loop forever in some cases.
+                    (let [minimum-required-size (* minimum-token-size
+                                                   tokens-to-go)
+                          minimum-required-size-for-rest (- minimum-required-size
+                                                            minimum-token-size)
+                          min* minimum-token-size
+                          max* (max min*
+                                    (- available-size
+                                       minimum-required-size-for-rest))
                           range* (- max* min*)
                           desired-mean (if (zero? range*)
-                                         (/ max* 2.0)
+                                         min*
                                          (/ (Math/abs range*) 2.0))
                           standard-deviation (Math/abs
                                               (estimated-standard-deviation
                                                max* min*))]
-                      (Math/round (first (clipped-normal-distribution
-                                          1
-                                          desired-mean
-                                          standard-deviation
-                                          min*
-                                          max*)))))
-                  token (generator token-size)]
-              (if (and unique? (contains? tokens token))
-                (recur available-size tokens)
-                (recur (- available-size token-size)
-                       (conj tokens token))))))))))
+                      ;; At least for generating fields, I don't actually want a
+                      ;; normal distribution with the range of values between
+                      ;; min and max here. Maybe what I want is a distribution
+                      ;; with the mean being `available-size / tokens-to-go` and
+                      ;; the standard deviation being based on the mean.
+                      (Math/round
+                       (first (clipped-normal-distribution
+                               1 desired-mean standard-deviation min* max*))))))
+                token (generator token-size)]
+            (if unique?
+              (if (zero? available-size)
+                (if (zero? tokens-to-go)
+                  tokens
+                  {:error [:unable-to-generate-tokens :impossible]})
+                (if (contains? tokens token)
+                  (recur available-size tokens (dec unique-attempts-remaining))
+                  (recur (- available-size token-size)
+                         (conj tokens token)
+                         unique-attempts-remaining)))
+              (recur (- available-size token-size)
+                     (conj tokens token)
+                     unique-attempts-remaining))))))))
 
 (defn generate-fields [document-size]
   (let [document-overhead 2      ;; {}
