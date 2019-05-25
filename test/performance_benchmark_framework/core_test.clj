@@ -28,28 +28,43 @@
         (is (<= min n max))))))
 
 (deftest generate-tokens-test
-  (let [iterations 40]
-    (dorun
-     (for [generator [generate-field generate-value]
-           unique? [false true]
-           number-of-tokens (range iterations)
-           i (range iterations)]
-       (let [available-size (* (+ i 1) number-of-tokens)
-             {:keys [error] :as tokens} (generate-tokens generator
-                                                         number-of-tokens
-                                                         available-size
-                                                         {:unique? unique?})]
-         (is (= nil error)
-             {:generator generator
-              :unique? unique?
-              :number-of-tokens number-of-tokens
-              :available-size available-size}))))))
+  (dorun
+   (for [[generator iterations] [[generate-field 27] [generate-value 41]]
+         unique? [false true]
+         number-of-tokens (range iterations)
+         i (range iterations)]
+     (let [available-size (* (+ i 1) number-of-tokens)
+           {:keys [error] :as tokens} (generate-tokens generator
+                                                       number-of-tokens
+                                                       available-size
+                                                       {:unique? unique?})
+           message {:generator generator
+                    :unique? unique?
+                    :number-of-tokens number-of-tokens
+                    :available-size available-size}]
+       (is (= nil error)
+           message)
+       (is (= number-of-tokens (count tokens))
+           message)
+       (is (= available-size (count (apply str tokens)))
+           message)))))
+
+(def generate-foo-language (range 4))
+
+(def generate-foo-language-size (count (set generate-foo-language)))
+
+(defn generate-foo [size]
+  {:pre [(or (zero? size) (pos? size))]}
+  (apply str (take size (repeatedly #(rand-nth generate-foo-language)))))
 
 (generate-value 100)
 
 (generate-foo 10)
 
-(generate-tokens generate-foo 5 4 {:unique? true})
+(generate-tokens generate-foo 4 4 {:unique? true})
 
-(clojure.pprint/pprint
- (generate-tokens generate-field 27 300 {:unique? true}))
+(clipped-normal-distribution 1 1 0 1 1)
+
+(generate-tokens generate-value 3 270 {:unique? true})
+
+(generate-mapping 1000)

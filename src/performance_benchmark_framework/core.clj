@@ -13,6 +13,10 @@
             [taoensso.timbre :refer [info]])
   (:import (java.util Random)))
 
+(def ^{:dynamic true} *token-size-jitter* 0.2)
+
+(def ^{:dynamic true} *max-random-tries* 1000)
+
 (defn pprint-str [x] (with-out-str (pprint x)))
 
 (defn between? [min max n]
@@ -22,15 +26,25 @@
   {:pre [(<= min max)]}
   (let [distribution* (distribution/normal {:mu mean :sd standard-deviation})]
     (loop [sample-size sample-size
-           full-sample []]
-      (let [sample (->> distribution*
-                        (distribution/sample sample-size)
-                        (filter (partial between? min max)))
-            sample-count (count sample)
-            new-full-sample (into full-sample sample)]
-        (if (= sample-size sample-count)
-          new-full-sample
-          (recur (- sample-size sample-count) new-full-sample))))))
+           full-sample []
+           random-tries-remaining *max-random-tries*]
+      (if (zero? random-tries-remaining)
+        {:error [:unable-to-generate-clipped-distribution
+                 {:sample-size sample-size
+                  :mean mean
+                  :standard-deviation standard-deviation
+                  :min min
+                  :max max}]}
+        (let [sample (->> distribution*
+                          (distribution/sample sample-size)
+                          (filter (partial between? min max)))
+              sample-count (count sample)
+              new-full-sample (into full-sample sample)]
+          (if (= sample-size sample-count)
+            new-full-sample
+            (recur (- sample-size sample-count)
+                   new-full-sample
+                   (dec random-tries-remaining))))))))
 
 (defmacro runtime [body]
   `(let [start# (. System (nanoTime))
@@ -102,10 +116,6 @@
 (def upper-and-lowercase-alpha-numeric
   (concat uppercase-alpha lowercase-alpha-numeric))
 
-(def generate-field-language (concat lowercase-alpha lowercase-alpha-numeric))
-
-(def generate-field-language-size (count (set generate-field-language)))
-
 (defn generate-field [size]
   {:pre [(or (zero? size) (pos? size))]}
   (apply str
@@ -113,26 +123,12 @@
          (take (dec size)
                (repeatedly #(rand-nth lowercase-alpha-numeric)))))
 
-(def generate-value-language (concat lowercase-alpha-numeric symbol*))
-
-(def generate-value-language-size (count (set generate-value-language)))
-
 (defn generate-value [size]
   {:pre [(or (zero? size) (pos? size))]}
-  (apply str (take size (repeatedly #(rand-nth generate-value-language)))))
-
-(def generate-foo-language (range 4))
-
-(def generate-foo-language-size (count (set generate-foo-language)))
-
-(defn generate-foo [size]
-  {:pre [(or (zero? size) (pos? size))]}
-  (apply str (take size (repeatedly #(rand-nth generate-foo-language)))))
-
-(def generator-language-sizes
-  {generate-field generate-field-language-size
-   generate-value generate-value-language-size
-   generate-foo generate-foo-language-size})
+  (->> #(rand-nth (concat lowercase-alpha-numeric symbol*))
+       (repeatedly)
+       (take size)
+       (apply str)))
 
 (def non-zero? (complement zero?))
 
@@ -156,65 +152,76 @@
 (defn rand-normal-int [& args]
   (Math/round (apply rand-normal args)))
 
-(defn estimated-standard-deviation
-  "Range Rule for standard deviations."
-  [min* max*]
-  (/ (- max* min*) 4.0))
+(defn generate-token [available-size tokens-to-go minimum-token-size generator]
+  (let [{:keys [error] :as token-size-or-error}
+        (if (zero? available-size)
+          0
+          (if (= 1 tokens-to-go)
+            available-size
+            (let [minimum-required-size (* minimum-token-size
+                                           tokens-to-go)
+                  minimum-required-size-for-rest (- minimum-required-size
+                                                    minimum-token-size)
+                  min* minimum-token-size
+                  max* (max min*
+                            (- available-size
+                               minimum-required-size-for-rest))
+                  range* (- max* min*)
+                  desired-mean (if (zero? range*)
+                                 min*
+                                 (/ available-size tokens-to-go))
+                  standard-deviation (if (zero? range*)
+                                       range*
+                                       (Math/abs
+                                        (* *token-size-jitter* desired-mean)))
+                  {:keys [error] :as distribution-or-error}
+                  (clipped-normal-distribution
+                   1 desired-mean standard-deviation min* max*)]
+              (if error
+                distribution-or-error
+                (Math/round (first distribution-or-error))))))]
+    (if error
+      token-size-or-error
+      (generator token-size-or-error))))
 
 (defn generate-tokens
   [generator number-of-tokens available-size & [{:keys [unique?]
                                                  :or {unique? false}}]]
   (loop [available-size available-size
          tokens (if unique? #{} [])
-         unique-attempts-remaining 1000]
+         unique-attempts-remaining *max-random-tries*]
     (let [minimum-token-size 1
           tokens-to-go (- number-of-tokens (count tokens))]
       (if (and unique? (zero? unique-attempts-remaining))
         {:error [:unable-to-generate-tokens :ran-out-of-attempts]}
         (if (zero? tokens-to-go)
           tokens
-          (let [token-size
-                (if (zero? available-size)
-                  0
-                  (if (= 1 tokens-to-go)
-                    available-size
-                    (let [minimum-required-size (* minimum-token-size
-                                                   tokens-to-go)
-                          minimum-required-size-for-rest (- minimum-required-size
-                                                            minimum-token-size)
-                          min* minimum-token-size
-                          max* (max min*
-                                    (- available-size
-                                       minimum-required-size-for-rest))
-                          range* (- max* min*)
-                          desired-mean (if (zero? range*)
-                                         min*
-                                         (/ (Math/abs range*) 2.0))
-                          standard-deviation (Math/abs
-                                              (estimated-standard-deviation
-                                               max* min*))]
-                      ;; At least for generating fields, I don't actually want a
-                      ;; normal distribution with the range of values between
-                      ;; min and max here. Maybe what I want is a distribution
-                      ;; with the mean being `available-size / tokens-to-go` and
-                      ;; the standard deviation being based on the mean.
-                      (Math/round
-                       (first (clipped-normal-distribution
-                               1 desired-mean standard-deviation min* max*))))))
-                token (generator token-size)]
+          (letfn [(make-token []
+                    (generate-token available-size
+                                    tokens-to-go
+                                    minimum-token-size
+                                    generator))]
             (if unique?
               (if (zero? available-size)
                 (if (zero? tokens-to-go)
                   tokens
                   {:error [:unable-to-generate-tokens :impossible]})
-                (if (contains? tokens token)
-                  (recur available-size tokens (dec unique-attempts-remaining))
-                  (recur (- available-size token-size)
-                         (conj tokens token)
-                         unique-attempts-remaining)))
-              (recur (- available-size token-size)
-                     (conj tokens token)
-                     unique-attempts-remaining))))))))
+                (let [{:keys [error] :as token-or-error} (make-token)]
+                  (if error
+                    token-or-error
+                    (if (contains? tokens token-or-error)
+                      (recur available-size
+                             tokens
+                             (dec unique-attempts-remaining))
+                      (recur (- available-size (count token-or-error))
+                             (conj tokens token-or-error)
+                             unique-attempts-remaining)))))
+              (let [{:keys [error] :as token-or-error} (make-token)]
+                (if error
+                  token-or-error
+                  (recur (- available-size (count token-or-error))
+                         (conj tokens token-or-error)
+                         unique-attempts-remaining))))))))))
 
 (defn generate-fields [document-size]
   (let [document-overhead 2      ;; {}
