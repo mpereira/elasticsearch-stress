@@ -49,13 +49,13 @@
        (is (= available-size (count (apply str tokens)))
            message)))))
 
-(def generate-foo-language (range 4))
+;; (def generate-foo-language (range 4))
 
-(def generate-foo-language-size (count (set generate-foo-language)))
+;; (def generate-foo-language-size (count (set generate-foo-language)))
 
-(defn generate-foo [size]
-  {:pre [(or (zero? size) (pos? size))]}
-  (apply str (take size (repeatedly #(rand-nth generate-foo-language)))))
+;; (defn generate-foo [size]
+;;   {:pre [(or (zero? size) (pos? size))]}
+;;   (apply str (take size (repeatedly #(rand-nth generate-foo-language)))))
 
 (generate-value 100)
 
@@ -66,5 +66,7 @@
 (clipped-normal-distribution 1 1 0 1 1)
 
 (generate-tokens generate-value 3 270 {:unique? true})
+
+(generate-fields 1000)
 
 (generate-mapping 1000)

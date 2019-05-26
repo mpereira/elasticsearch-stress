@@ -13,6 +13,8 @@
             [taoensso.timbre :refer [info]])
   (:import (java.util Random)))
 
+(def ^{:dynamic true} *exponential-distribution-max-value-denominator-multiplier* 0.065)
+
 (def ^{:dynamic true} *token-size-jitter* 0.2)
 
 (def ^{:dynamic true} *max-random-tries* 1000)
@@ -132,25 +134,69 @@
 
 (def non-zero? (complement zero?))
 
-(defn rand-normal [min* max* & [{:keys [skew sd-skew]
+(defn rand-exponential [max-value]
+  (let [rate (/ 1 (* *exponential-distribution-max-value-denominator-multiplier*
+                     max-value))]
+    (first (distribution/exponential rate))))
+
+(defn rand-exponential-int [& args]
+  (Math/round (apply rand-exponential args)))
+
+(defn standard-deviation-from-range [min* max*]
+  (/ (- max* min*) 4.0))
+
+(defn rand-normal [min* max* & [{:keys [skew sd-skew sd]
                                  :or {skew 0
                                       sd-skew 0}}]]
   (assert (not (and (non-zero? skew)
                     (non-zero? sd-skew)))
           "Specify only one of 'skew' or 'sd-skew'")
   (let [mean (/ (- max* min*) 2.0)
-        standard-deviation (/ (- mean min*) 3.0)
+        standard-deviation (or sd (standard-deviation-from-range min* max*))
         actual-skew (if (zero? sd-skew)
                       skew
                       (* standard-deviation sd-skew))
         possibly-skewed-mean (+ mean actual-skew)
-        sample-size 1]
-    (first
-     (clipped-normal-distribution
-      sample-size possibly-skewed-mean standard-deviation min* max*))))
+        sample-size 1
+        {:keys [error] :as distribution-or-error}
+        (clipped-normal-distribution
+         sample-size possibly-skewed-mean standard-deviation min* max*)]
+    (if error
+      distribution-or-error
+      (first distribution-or-error))))
 
 (defn rand-normal-int [& args]
-  (Math/round (apply rand-normal args)))
+  (let [{:keys [error] :as rand-normal-or-error} (apply rand-normal args)]
+    (if error
+      rand-normal-or-error
+      (Math/round rand-normal-or-error))))
+
+(defn uniform-mean-statistics
+  "Breaks down `available-size` in `tokens-count` parts.
+
+  Generates statistics so that:
+  1. 'mean' is 'available-size / tokens-count'
+  2. 'standard-deviation' is 'mean * jitter'"
+  [available-size tokens-count minimum-token-size]
+  (let [minimum-required-size (* minimum-token-size
+                                 tokens-count)
+        minimum-required-size-for-rest (- minimum-required-size
+                                          minimum-token-size)
+        min* minimum-token-size
+        max* (max min*
+                  (- available-size
+                     minimum-required-size-for-rest))
+        range* (- max* min*)
+        mean (if (zero? range*)
+               min*
+               (/ available-size tokens-count))
+        standard-deviation (if (zero? range*)
+                             range*
+                             (Math/abs (* *token-size-jitter* mean)))]
+    {:min min*
+     :max max*
+     :mean mean
+     :standard-deviation standard-deviation}))
 
 (defn generate-token [available-size tokens-to-go minimum-token-size generator]
   (let [{:keys [error] :as token-size-or-error}
@@ -158,25 +204,12 @@
           0
           (if (= 1 tokens-to-go)
             available-size
-            (let [minimum-required-size (* minimum-token-size
-                                           tokens-to-go)
-                  minimum-required-size-for-rest (- minimum-required-size
-                                                    minimum-token-size)
-                  min* minimum-token-size
-                  max* (max min*
-                            (- available-size
-                               minimum-required-size-for-rest))
-                  range* (- max* min*)
-                  desired-mean (if (zero? range*)
-                                 min*
-                                 (/ available-size tokens-to-go))
-                  standard-deviation (if (zero? range*)
-                                       range*
-                                       (Math/abs
-                                        (* *token-size-jitter* desired-mean)))
+            (let [{:keys [mean standard-deviation] min* :min max* :max}
+                  (uniform-mean-statistics available-size
+                                           tokens-to-go
+                                           minimum-token-size)
                   {:keys [error] :as distribution-or-error}
-                  (clipped-normal-distribution
-                   1 desired-mean standard-deviation min* max*)]
+                  (clipped-normal-distribution 1 mean standard-deviation min* max*)]
               (if error
                 distribution-or-error
                 (Math/round (first distribution-or-error))))))]
@@ -187,41 +220,45 @@
 (defn generate-tokens
   [generator number-of-tokens available-size & [{:keys [unique?]
                                                  :or {unique? false}}]]
-  (loop [available-size available-size
-         tokens (if unique? #{} [])
-         unique-attempts-remaining *max-random-tries*]
-    (let [minimum-token-size 1
-          tokens-to-go (- number-of-tokens (count tokens))]
-      (if (and unique? (zero? unique-attempts-remaining))
-        {:error [:unable-to-generate-tokens :ran-out-of-attempts]}
-        (if (zero? tokens-to-go)
-          tokens
-          (letfn [(make-token []
-                    (generate-token available-size
-                                    tokens-to-go
-                                    minimum-token-size
-                                    generator))]
-            (if unique?
-              (if (zero? available-size)
-                (if (zero? tokens-to-go)
-                  tokens
-                  {:error [:unable-to-generate-tokens :impossible]})
+  (let [args {:generator generator
+              :number-of-tokens number-of-tokens
+              :available-size available-size
+              :unique? unique?}]
+    (loop [available-size available-size
+           tokens (if unique? #{} [])
+           unique-attempts-remaining *max-random-tries*]
+      (let [minimum-token-size 1
+            tokens-to-go (- number-of-tokens (count tokens))]
+        (if (and unique? (zero? unique-attempts-remaining))
+          {:error [:unable-to-generate-tokens :ran-out-of-attempts args]}
+          (if (zero? tokens-to-go)
+            tokens
+            (letfn [(make-token []
+                      (generate-token available-size
+                                      tokens-to-go
+                                      minimum-token-size
+                                      generator))]
+              (if unique?
+                (if (zero? available-size)
+                  (if (zero? tokens-to-go)
+                    tokens
+                    {:error [:unable-to-generate-tokens :impossible args]})
+                  (let [{:keys [error] :as token-or-error} (make-token)]
+                    (if error
+                      token-or-error
+                      (if (contains? tokens token-or-error)
+                        (recur available-size
+                               tokens
+                               (dec unique-attempts-remaining))
+                        (recur (- available-size (count token-or-error))
+                               (conj tokens token-or-error)
+                               unique-attempts-remaining)))))
                 (let [{:keys [error] :as token-or-error} (make-token)]
                   (if error
                     token-or-error
-                    (if (contains? tokens token-or-error)
-                      (recur available-size
-                             tokens
-                             (dec unique-attempts-remaining))
-                      (recur (- available-size (count token-or-error))
-                             (conj tokens token-or-error)
-                             unique-attempts-remaining)))))
-              (let [{:keys [error] :as token-or-error} (make-token)]
-                (if error
-                  token-or-error
-                  (recur (- available-size (count token-or-error))
-                         (conj tokens token-or-error)
-                         unique-attempts-remaining))))))))))
+                    (recur (- available-size (count token-or-error))
+                           (conj tokens token-or-error)
+                           unique-attempts-remaining)))))))))))
 
 (defn generate-fields [document-size]
   (let [document-overhead 2      ;; {}
@@ -229,42 +266,72 @@
         kv-overhead 5            ;; "":""
         additional-kv-overhead 1 ;; ,
         minimum-kv-size 7        ;; "a":"b"
+        minimum-k-size minimum-token-size
+        minimum-v-size minimum-token-size
         minimum-document-size (+ document-overhead minimum-kv-size)
+        minimum-number-of-kvs 1
         maximum-number-of-kvs
         (loop [available-size (- document-size document-overhead)
                number-of-kvs 0]
           (let [possible-additional-kv-overhead (if (pos? number-of-kvs)
                                                   additional-kv-overhead
                                                   0)
-                available-size-with-another-kv (- available-size
-                                                  (+ minimum-kv-size
-                                                     possible-additional-kv-overhead))]
+                available-size-with-another-kv
+                (- available-size
+                   (+ minimum-kv-size
+                      possible-additional-kv-overhead))]
             (if (> 0 available-size-with-another-kv)
               number-of-kvs
               (recur available-size-with-another-kv
                      (inc number-of-kvs)))))
-        number-of-kvs (rand-normal-int 1 maximum-number-of-kvs {:sd-skew -2})
-        total-overhead (+ document-overhead
-                          (* number-of-kvs kv-overhead)
-                          (* (- number-of-kvs 1) additional-kv-overhead))
-        current-available-size (- document-size total-overhead)
-        minimum-size-for-ks (* minimum-token-size number-of-kvs)
-        minimum-size-for-vs minimum-size-for-ks
-        maximum-size-for-ks (- current-available-size minimum-size-for-vs)
-        size-for-ks (rand-normal-int minimum-size-for-ks
-                                     maximum-size-for-ks
-                                     {:sd-skew -2})
-        size-for-vs (- current-available-size size-for-ks)]
-    {:fields (generate-tokens generate-field number-of-kvs size-for-ks {:unique? true})
-     :size-remaining-for-values size-for-vs}))
+        {:keys [error] :as number-of-kvs-or-error} (+ minimum-number-of-kvs
+                                                      (rand-exponential-int
+                                                       maximum-number-of-kvs))]
+    (if error
+      number-of-kvs-or-error
+      (let [number-of-kvs number-of-kvs-or-error
+            number-of-ks number-of-kvs
+            number-of-vs number-of-kvs
+            total-overhead (+ document-overhead
+                              (* number-of-kvs kv-overhead)
+                              (* (- number-of-kvs 1) additional-kv-overhead))
+            current-available-size (- document-size total-overhead)
+            minimum-size-for-ks (* minimum-token-size number-of-ks)
+            minimum-size-for-vs (* minimum-token-size number-of-vs)
+            maximum-size-for-ks (- current-available-size minimum-size-for-vs)
+            sd-skew -3
+            sd (/ (standard-deviation-from-range minimum-size-for-ks
+                                                 maximum-size-for-ks)
+                  (Math/abs sd-skew))
+            {:keys [error] :as size-for-ks-or-error} (rand-normal-int
+                                                      minimum-size-for-ks
+                                                      maximum-size-for-ks
+                                                      {:sd sd
+                                                       :sd-skew sd-skew})]
+        (if error
+          size-for-ks-or-error
+          (let [size-for-ks size-for-ks-or-error
+                size-for-vs (- current-available-size size-for-ks)
+                {:keys [error] :as tokens-or-error} (generate-tokens
+                                                     generate-field
+                                                     number-of-kvs
+                                                     size-for-ks
+                                                     {:unique? true})]
+            (if error
+              tokens-or-error
+              {:fields tokens-or-error
+               :size-remaining-for-values size-for-vs})))))))
 
 (defn generate-mapping [document-size]
-  (let [{:keys [fields size-remaining-for-values]} (generate-fields document-size)]
-    {:mapping {:properties (reduce (fn [properties field]
-                                     (assoc properties field {:type "keyword"}))
-                                   {}
-                                   fields)}
-     :size-remaining-for-values size-remaining-for-values}))
+  (let [{:keys [error] :as result-or-error} (generate-fields document-size)]
+    (if error
+      result-or-error
+      (let [{:keys [fields size-remaining-for-values]} result-or-error]
+        {:mapping {:properties (reduce (fn [properties field]
+                                         (assoc properties field {:type "keyword"}))
+                                       {}
+                                       fields)}
+         :size-remaining-for-values size-remaining-for-values}))))
 
 (defn generate-document [{:keys [properties] :as mapping} available-size]
   (let [generator-outputs (generate-tokens generate-value (count properties) available-size)]
@@ -413,9 +480,14 @@
                      {:url [:elasticsearch-stress]
                       :method :delete}))
 
-  (oz/export! {:data {:values (->> (repeatedly 100000 #(rand-normal-int 0
-                                                                        100
-                                                                        {:sd-skew -2}))
+  (oz/export! {:data {:values (->> (repeatedly
+                                    100000
+                                    #(rand-normal-int
+                                      35
+                                      754
+                                      {:sd (/ (standard-deviation-from-range 35 754)
+                                              2)
+                                       :sd-skew -2}))
 
                                    (map hash-map (repeat :x)))}
                :mark "bar"
@@ -424,7 +496,19 @@
                               :field "x"}
                           :y {:aggregate "count"
                               :type "quantitative"}}}
-              "normal_distribution.html"))
+              "normal_distribution.html")
+
+  (oz/export! {:data {:values (->> (repeatedly
+                                    100000
+                                    #(rand-exponential 1000))
+                                   (map hash-map (repeat :x)))}
+               :mark "bar"
+               :encoding {:x {:bin {:binned true
+                                    :step 50}
+                              :field "x"}
+                          :y {:aggregate "count"
+                              :type "quantitative"}}}
+              "exponential_distribution.html"))
 
 (defn -main
   [& args]
