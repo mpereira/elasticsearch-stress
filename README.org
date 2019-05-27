@@ -5,6 +5,8 @@
 
   FIXME: description
 
+** TODO Use https://github.com/funcool/cats?
+
 ** Infrastructure
    https://docs.confluent.io/current/quickstart/ce-docker-quickstart.html
    https://www.terraform.io/docs/providers/aws/d/instance.html

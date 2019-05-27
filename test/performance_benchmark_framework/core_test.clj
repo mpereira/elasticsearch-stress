@@ -70,3 +70,5 @@
 (generate-fields 10000)
 
 (generate-mapping 5000)
+
+(clojure.string/split "hai" #",")

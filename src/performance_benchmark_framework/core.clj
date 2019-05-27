@@ -3,13 +3,15 @@
   (:require [cheshire.core :as json]
             [clojure.pprint :refer [pprint]]
             [clojure.string :as string]
+            [clojure.tools.cli :refer [parse-opts]]
             [com.climate.claypoole :as cp]
-            [oz.core :as oz]
             [kixi.stats.core :as stats]
             [kixi.stats.distribution :refer [quantile] :as distribution]
+            [oz.core :as oz]
             [qbits.spandex :as s]
             [taoensso.timbre :refer [info]])
-  (:import (java.util Random)))
+  (:import (java.net InetAddress)
+           (java.util Random)))
 
 (def ^{:dynamic true} *exponential-distribution-max-value-denominator-multiplier* 0.065)
 
@@ -511,12 +513,97 @@
                               :type "quantitative"}}}
               "exponential_distribution.html"))
 
-(defn -main
-  [& args]
+(def cli-options
+  [[nil "--bulk" "Whether to use bulk requests or not"
+    :default true
+    :id :bulk]
+   [nil "--bulk-size BULK_SIZE" "Size of bulk requests"
+    :default 100
+    :parse-fn #(Integer/parseInt %)
+    :id :bulk-size]
+   [nil "--document-size DOCUMENT_SIZE" "Size in bytes of documents"
+    :parse-fn #(Integer/parseInt %)
+    :id :document-size]
+   [nil "--documents DOCUMENTS" "Number of documents to index"
+    :parse-fn #(Integer/parseInt %)
+    :id :documents]
+   [nil "--hosts HOSTS" "List of comma-separated Elasticsearch hosts"
+    :parse-fn #(string/split % #",")
+    :default ["http://localhost:9200"]
+    :id :hosts]
+   [nil "--index-name INDEX_NAME" "Where documents will be indexed to"
+    :default "elasticsearch-stress"
+    :id :index-name]
+   [nil "--threads THREADS" "Number of indexing threads to spawn"
+    :default 2
+    :parse-fn #(Integer/parseInt %)
+    :id :threads]
+   ["-v" "--version" "Show version"
+    :id :version]
+   ["-h" "--help" "Show help"
+    :id :help]])
+
+(def version "0.0.1")
+
+(def program-name "elasticsearch-stress")
+
+(defn usage-message [summary]
+  (->> [(str program-name " " version)
+        ""
+        "elasticsearch-stress is a stress tool for Elasticsearch."
+        ""
+        "Usage:"
+        summary]
+       (string/join \newline)))
+
+(defn error-message [args errors]
+  (str "The following errors occurred while parsing your command:"
+       " "
+       "`" program-name " " (apply str args) "`"
+       "\n\n"
+       (string/join \newline errors)
+       "\n\n"
+       "Run `elasticsearch-stress --help` for more information"))
+
+(defn valid-command? [parsed-opts]
+  true)
+
+(defn dispatch-command [{:keys [arguments summary options] :as parsed-opts}]
+  (cond
+    (:help options) {:stdout (usage-message summary)
+                     :return-code 0}
+    (:version options) {:stdout version
+                        :return-code 0}
+    (valid-command? parsed-opts) (run options)
+    :else {:stdout (usage-message summary)
+           :return-code 1}))
+
+(comment
   (run {:bulk true
         :bulk-size 500
-        :document-size 1000
+        :document-size 10000
         :documents 5000
         :hosts ["http://localhost:9200" "http://localhost:9201"]
         :index-name "elasticsearch-stress"
-        :threads 4}))
+        :threads 4})
+  (-main "--bulk"
+         "--bulk-size" "500"
+         "--document-size" "1000"
+         "--documents" "5000"
+         "--hosts" "http://localhost:9200,http://localhost:9201"
+         "--index-name" "elasticsearch-stress"
+         "--threads" "4"))
+
+(defn -main
+  [& args]
+  (let [{:keys [options arguments summary errors] :as parsed-opts} (parse-opts args cli-options)]
+    (println "********************************************************************************")
+    (pprint (assoc (dissoc parsed-opts :summary)
+                   :raw-args args))
+    (println "********************************************************************************")
+    (if errors
+      (println (error-message args errors))
+      (let [{:keys [stdout return-code]} (dispatch-command parsed-opts)]
+        (println stdout)
+        ;; (System/exit return-code)
+        ))))
