@@ -67,6 +67,6 @@
 
 (generate-tokens generate-value 3 270 {:unique? true})
 
-(generate-fields 1000)
+(generate-fields 10000)
 
-(generate-mapping 1000)
+(generate-mapping 5000)

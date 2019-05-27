@@ -6,9 +6,7 @@
             [com.climate.claypoole :as cp]
             [oz.core :as oz]
             [kixi.stats.core :as stats]
-            [kixi.stats.distribution
-             :refer [quantile]
-             :as distribution]
+            [kixi.stats.distribution :refer [quantile] :as distribution]
             [qbits.spandex :as s]
             [taoensso.timbre :refer [info]])
   (:import (java.util Random)))
@@ -134,9 +132,15 @@
 
 (def non-zero? (complement zero?))
 
-(defn rand-exponential [max-value]
-  (let [rate (/ 1 (* *exponential-distribution-max-value-denominator-multiplier*
-                     max-value))]
+(defn rand-exponential
+  [{:keys [rate max-value]}]
+  (assert (not (and rate (non-zero? rate)
+                    max-value (non-zero? max-value)))
+          "Specify only one of 'rate' or 'max-value'")
+  (let [rate
+        (or rate
+            (/ 1 (* *exponential-distribution-max-value-denominator-multiplier*
+                    max-value)))]
     (first (distribution/exponential rate))))
 
 (defn rand-exponential-int [& args]
@@ -286,7 +290,8 @@
                      (inc number-of-kvs)))))
         {:keys [error] :as number-of-kvs-or-error} (+ minimum-number-of-kvs
                                                       (rand-exponential-int
-                                                       maximum-number-of-kvs))]
+                                                       {:max-value
+                                                        maximum-number-of-kvs}))]
     (if error
       number-of-kvs-or-error
       (let [number-of-kvs number-of-kvs-or-error
@@ -299,15 +304,11 @@
             minimum-size-for-ks (* minimum-token-size number-of-ks)
             minimum-size-for-vs (* minimum-token-size number-of-vs)
             maximum-size-for-ks (- current-available-size minimum-size-for-vs)
-            sd-skew -3
-            sd (/ (standard-deviation-from-range minimum-size-for-ks
-                                                 maximum-size-for-ks)
-                  (Math/abs sd-skew))
-            {:keys [error] :as size-for-ks-or-error} (rand-normal-int
-                                                      minimum-size-for-ks
-                                                      maximum-size-for-ks
-                                                      {:sd sd
-                                                       :sd-skew sd-skew})]
+            {:keys [error] :as size-for-ks-or-error} (+ (max minimum-size-for-ks
+                                                             number-of-kvs)
+                                                        (rand-exponential-int
+                                                         {:max-value
+                                                          maximum-size-for-ks}))]
         (if error
           size-for-ks-or-error
           (let [size-for-ks size-for-ks-or-error
@@ -499,12 +500,12 @@
               "normal_distribution.html")
 
   (oz/export! {:data {:values (->> (repeatedly
-                                    100000
-                                    #(rand-exponential 1000))
+                                    1000000
+                                    #(rand-exponential {:max-value 100}))
                                    (map hash-map (repeat :x)))}
                :mark "bar"
                :encoding {:x {:bin {:binned true
-                                    :step 50}
+                                    :step 5}
                               :field "x"}
                           :y {:aggregate "count"
                               :type "quantitative"}}}
