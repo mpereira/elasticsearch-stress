@@ -1,93 +1,91 @@
-* performance-benchmark-framework
+* elasticsearch-stress
   :PROPERTIES:
-  :header_args:bash: :session performance_benchmark_framework.sh :results none :exports code
+  :header_args:bash: :session elasticsearch_stress.sh :results none :exports code
   :END:
 
-  FIXME: description
-
-** TODO Use https://github.com/funcool/cats?
-
-** Infrastructure
-   https://docs.confluent.io/current/quickstart/ce-docker-quickstart.html
-   https://www.terraform.io/docs/providers/aws/d/instance.html
-   https://learn.hashicorp.com/terraform/getting-started/build.html
-   https://sweetcode.io/deploying-aws-ec2-instance-using-terraform/
-
-** CLI
-   https://github.com/l3nz/cli-matic
-
-** Benchmarking tools
-   https://github.com/etcd-io/etcd/tree/master/tools/benchmark
+  elasticsearch-stress is a stress tool for Elasticsearch.
 
 ** Usage
+   #+begin_src text
+   elasticsearch-stress [OPTIONS]
 
-   FIXME: explanation
-
-   $ java -jar performance-benchmark-framework-0.1.0-standalone.jar [args]
-
-** Options
-
-   FIXME: listing of options this app accepts.
-
-** Commands
-
-   #+begin_src bash
-   docker-compose exec broker /usr/bin/kafka-producer-perf-test \
-     --num-records 1000000 \
-     --throughput 1000000 \
-     --record-size 1000 \
-     --topic performance_benchmark_framework \
-     --producer-props bootstrap.servers=localhost:9092 batch.size=10 \
-     --print-metrics
+Op tions:
+       --bulk                                                    Whether to use bulk requests or not. Defaults to true
+       --bulk-size BULK_SIZE          100                        Size of bulk requests
+       --document-size DOCUMENT_SIZE                             Size in bytes of documents
+       --documents DOCUMENTS                                     Number of documents to index
+       --hosts HOSTS                  ["http://localhost:9200"]  List of comma-separated Elasticsearch hosts
+       --index-name INDEX_NAME        elasticsearch-stress       Where documents will be indexed to
+       --threads THREADS              2                          Number of indexing threads to spawn
+   -v, --version                                                 Show version
+   -h, --help                                                    Show help
    #+end_src
 
-   #+begin_src bash
-   ./graalvm-ce-19.0.0/Contents/Home/bin/gu install native-image
-   #+end_src
+** Development
+   Work on elasticsearch-stress is mostly done on Emacs. The workflow looks
+   like:
+   1. A CIDER session is started with `M-x cider-jack-in`
+   2. Code is evaluated with with `cider-eval-sexp-at-point` or
+      `cider-eval-buffer`
+   3. Tests are run with `cider-test-run-test` or `cider-test-run-ns-tests`
 
-   #+begin_src bash
-   ./graalvm-ce-19.0.0/Contents/Home/bin/native-image \
-     -H:+ReportUnsupportedElementsAtRuntime \
-     -J-Xmx3G \
-     -J-Xms3G \
-     --no-server \
-     -jar target/uberjar/performance-benchmark-framework-0.1.0-SNAPSHOT-standalone.jar
-   #+end_src
+*** Requirements
+    - Java
+    - leiningen
+    - GraalVM (with its binaries in the PATH and the native-image utility installed)
 
-   #+RESULTS:
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:30665] | classlist:  | 19,590.36   | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:30665] | (cap):      | 2,101.31    | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:30665] | setup:      | 3,808.44    | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:30665] | analysis:   | 36,806.07   | ms     |       |         |
-   | Build                                                             | on          | Server(pid: | 31430, | port: | 64599)* |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | classlist:  | 5,089.69    | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | (cap):      | 1,279.61    | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | setup:      | 2,744.52    | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | (typeflow): | 2,259.01    | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | (objects):  | 813.92      | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | (features): | 182.39      | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | analysis:   | 3,342.72    | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | (clinit):   | 85.57       | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | universe:   | 275.78      | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | (parse):    | 264.96      | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | (inline):   | 1,090.04    | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | (compile):  | 4,024.48    | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | compile:    | 5,602.26    | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | image:      | 323.37      | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | write:      | 146.22      | ms     |       |         |
-   | [performance-benchmark-framework-0.1.0-SNAPSHOT-standalone:31430] | [total]:    | 17,656.85   | ms     |       |         |
+*** Running tests
+    #+begin_src bash
+    lein test
+    #+end_src
+
+*** Building uberjar
+    #+begin_src bash
+    lein uberjar
+    #+end_src
+
+*** Building uberjar
+    #+begin_src bash
+    ls
+    #+end_src
+
+*** Building native image
+    #+begin_src bash :session elasticsearch_stress.sh :results none :exports code
+    native-image \
+      --enable-http \
+      --enable-https \
+      --initialize-at-build-time \
+      --no-fallback \
+      --no-server \
+      --report-unsupported-elements-at-runtime \
+      --verbose \
+      -H:+ReportExceptionStackTraces \
+      -J-Xms4G \
+      -J-Xmx4G \
+      -O0 \
+      -jar target/uberjar/performance-benchmark-framework-0.1.0-SNAPSHOT-standalone.jar \
+      elasticsearch-stress
+    #+end_src
 
 ** License
+   #+begin_src text
+   Copyright 2019 Murilo Pereira
 
-   Copyright © 2019 FIXME
+   Permission is hereby granted, free of charge, to any person obtaining a copy
+   of this software and associated documentation files (the "Software"), to deal
+   in the Software without restriction, including without limitation the rights
+   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+   copies of the Software, and to permit persons to whom the Software is
+   furnished to do so, subject to the following conditions:
 
-   This program and the accompanying materials are made available under the
-   terms of the Eclipse Public License 2.0 which is available at
-   http://www.eclipse.org/legal/epl-2.0.
+   The above copyright notice and this permission notice shall be included in
+   all copies or substantial portions of the Software.
 
-   This Source Code may also be made available under the following Secondary
-   Licenses when the conditions for such availability set forth in the Eclipse
-   Public License, v. 2.0 are satisfied: GNU General Public License as published by
-   the Free Software Foundation, either version 2 of the License, or (at your
-   option) any later version, with the GNU Classpath Exception which is available
-   at https://www.gnu.org/software/classpath/license.html.
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.
+   #+end_src
