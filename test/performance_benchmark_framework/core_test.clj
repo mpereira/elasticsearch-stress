@@ -1,6 +1,7 @@
 (ns performance-benchmark-framework.core-test
   (:require [clojure.test :refer :all]
-            [performance-benchmark-framework.core :refer :all]))
+            [performance-benchmark-framework.generators :refer :all]
+            [performance-benchmark-framework.statistics :refer :all]))
 
 (deftest generate-field-and-value-test
   (dotimes [size 10]
@@ -48,27 +49,3 @@
            message)
        (is (= available-size (count (apply str tokens)))
            message)))))
-
-;; (def generate-foo-language (range 4))
-
-;; (def generate-foo-language-size (count (set generate-foo-language)))
-
-;; (defn generate-foo [size]
-;;   {:pre [(or (zero? size) (pos? size))]}
-;;   (apply str (take size (repeatedly #(rand-nth generate-foo-language)))))
-
-(generate-value 100)
-
-(generate-foo 10)
-
-(generate-tokens generate-foo 4 4 {:unique? true})
-
-(clipped-normal-distribution 1 1 0 1 1)
-
-(generate-tokens generate-value 3 270 {:unique? true})
-
-(generate-fields 10000)
-
-(generate-mapping 5000)
-
-(clojure.string/split "hai" #",")
