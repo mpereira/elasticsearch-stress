@@ -4,7 +4,6 @@
             [clojure.string :as string]
             [clojure.tools.cli :refer [parse-opts]]
             [com.climate.claypoole :as cp]
-            [oz.core :as oz]
             [performance-benchmark-framework.elasticsearch :as elasticsearch]
             [performance-benchmark-framework.generators :as generators]
             [performance-benchmark-framework.statistics :as statistics]
@@ -136,71 +135,6 @@
       (cp/shutdown pool))
     (info "Ended load")))
 
-(comment
-  (let [{:keys [fields size-remaining-for-values]} (generators/generate-fields 500)]
-    (pprint
-     (take 5
-           (repeatedly
-            #(generators/generate-document fields size-remaining-for-values)))))
-
-  (pprint
-   (elasticsearch/request
-    (elasticsearch/client {:hosts ["http://localhost:9200"
-                                   "http://localhost:9201"]})
-    {:url [:elasticsearch-stress]
-     :method :get}))
-  (pprint
-   (elasticsearch/request
-    (elasticsearch/client {:hosts ["http://localhost:9200"
-                                   "http://localhost:9201"]})
-    {:url [:_search]
-     :method :get
-     :body {:query {:match_all {}}}}))
-  (pprint
-   (elasticsearch/create-document
-    (elasticsearch/client {:hosts ["http://localhost:9200"
-                                   "http://localhost:9201"]})
-    :elasticsearch-stress
-    {:foo "foo"
-     :bar "bar"}))
-  (pprint
-   (elasticsearch/request
-    (elasticsearch/client {:hosts ["http://localhost:9200"
-                                   "http://localhost:9201"]})
-    {:url [:elasticsearch-stress]
-     :method :delete}))
-
-  (oz/export!
-   {:data {:values (->> (repeatedly
-                         100000
-                         #(random/rand-normal-int
-                           35
-                           754
-                           {:sd (/ (random/standard-deviation-from-range 35 754)
-                                   2)
-                            :sd-skew -2}))
-
-                        (map hash-map (repeat :x)))}
-    :mark "bar"
-    :encoding {:x {:bin {:binned true
-                         :step 5}
-                   :field "x"}
-               :y {:aggregate "count"
-                   :type "quantitative"}}}
-   "normal_distribution.html")
-
-  (oz/export! {:data {:values (->> (repeatedly
-                                    1000000
-                                    #(random/rand-exponential {:max-value 100}))
-                                   (map hash-map (repeat :x)))}
-               :mark "bar"
-               :encoding {:x {:bin {:binned true
-                                    :step 5}
-                              :field "x"}
-                          :y {:aggregate "count"
-                              :type "quantitative"}}}
-              "exponential_distribution.html"))
-
 (def cli-options
   [[nil "--bulk" "Whether to use bulk requests or not. Defaults to true"
     :default true
@@ -240,7 +174,8 @@
   (let [preamble (when show-preamble?
                    (->> [(str program-name " " version)
                          ""
-                         "elasticsearch-stress is a stress tool for Elasticsearch."
+                         (str "elasticsearch-stress is a stress tool "
+                              "for Elasticsearch.")
                          ""]
                         (string/join \newline)))]
     (->> [preamble
@@ -263,7 +198,8 @@
 (defn valid-command? [{:keys [arguments summary options] :as parsed-opts}]
   (empty? arguments))
 
-(defn dispatch-command [{:keys [arguments summary options raw-args] :as parsed-opts}]
+(defn dispatch-command
+  [{:keys [arguments summary options raw-args] :as parsed-opts}]
   (cond
     (or (:help options)
         (contains? (set arguments) "help")) {:stdout (usage-message summary)
@@ -278,34 +214,12 @@
                 (usage-message summary {:show-preamble? false}))
            :return-code 1}))
 
-(comment
-  (run {:bulk true
-        :bulk-size 500
-        :document-size 10000
-        :documents 5000
-        :hosts ["http://localhost:9200" "http://localhost:9201"]
-        :index-name "elasticsearch-stress"
-        :threads 4})
-  (-main "run")
-  (-main "--help")
-  (-main "--bulk"
-         "--bulk-size" "500"
-         "--document-size" "1000"
-         "--documents" "5000"
-         "--hosts" "http://localhost:9200,http://localhost:9201"
-         "--index-name" "elasticsearch-stress"
-         "--threads" "4"))
-
 (defn -main
   [& args]
   (let [{:keys [errors] :as parsed-opts} (assoc (parse-opts args cli-options)
                                                 :raw-args args)]
-    (println "********************************************************************************")
-    (pprint (dissoc parsed-opts :summary))
-    (println "********************************************************************************")
     (if errors
       (println (error-message parsed-opts))
       (let [{:keys [stdout return-code]} (dispatch-command parsed-opts)]
         (println stdout)
-        ;; (System/exit return-code)
-        ))))
+        (System/exit return-code)))))

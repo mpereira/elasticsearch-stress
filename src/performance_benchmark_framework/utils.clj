@@ -3,7 +3,7 @@
 
 (def non-zero? (complement zero?))
 
-(defn between? [min max n]
-  (<= min n max))
+(defn between? [min* max* n]
+  (<= min* n max*))
 
 (defn pprint-str [x] (with-out-str (pprint x)))

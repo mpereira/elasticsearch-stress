@@ -75,7 +75,8 @@
                                            tokens-to-go
                                            minimum-token-size)
                   {:keys [error] :as distribution-or-error}
-                  (clipped-normal-distribution 1 mean standard-deviation min* max*)]
+                  (clipped-normal-distribution
+                   1 mean standard-deviation min* max*)]
               (if error
                 distribution-or-error
                 (Math/round (first distribution-or-error))))))]
@@ -150,10 +151,11 @@
               number-of-kvs
               (recur available-size-with-another-kv
                      (inc number-of-kvs)))))
-        {:keys [error] :as number-of-kvs-or-error} (+ minimum-number-of-kvs
-                                                      (rand-exponential-int
-                                                       {:max-value
-                                                        maximum-number-of-kvs}))]
+        {:keys [error] :as number-of-kvs-or-error} (+
+                                                    minimum-number-of-kvs
+                                                    (rand-exponential-int
+                                                     {:max-value
+                                                      maximum-number-of-kvs}))]
     (if error
       number-of-kvs-or-error
       (let [number-of-kvs number-of-kvs-or-error
@@ -166,11 +168,12 @@
             minimum-size-for-ks (* minimum-token-size number-of-ks)
             minimum-size-for-vs (* minimum-token-size number-of-vs)
             maximum-size-for-ks (- current-available-size minimum-size-for-vs)
-            {:keys [error] :as size-for-ks-or-error} (+ (max minimum-size-for-ks
-                                                             number-of-kvs)
-                                                        (rand-exponential-int
-                                                         {:max-value
-                                                          maximum-size-for-ks}))]
+            {:keys [error] :as size-for-ks-or-error} (+
+                                                      (max minimum-size-for-ks
+                                                           number-of-kvs)
+                                                      (rand-exponential-int
+                                                       {:max-value
+                                                        maximum-size-for-ks}))]
         (if error
           size-for-ks-or-error
           (let [size-for-ks size-for-ks-or-error
@@ -191,16 +194,20 @@
       result-or-error
       (let [{:keys [fields size-remaining-for-values]} result-or-error]
         {:mapping {:properties (reduce (fn [properties field]
-                                         (assoc properties field {:type "keyword"}))
+                                         (assoc properties
+                                                field {:type "keyword"}))
                                        {}
                                        fields)}
          :size-remaining-for-values size-remaining-for-values}))))
 
 (defn generate-document [{:keys [properties] :as mapping} available-size]
-  (let [generator-outputs (generate-tokens generate-value (count properties) available-size)]
+  (let [generator-outputs (generate-tokens generate-value
+                                           (count properties)
+                                           available-size)]
     (into {} (map vector (keys properties) generator-outputs))))
 
 (defn generate-document-batches
   [number-of-documents bulk-size document-size mapping size-for-values]
-  (->> (repeatedly number-of-documents #(generate-document mapping size-for-values))
+  (->> #(generate-document mapping size-for-values)
+       (repeatedly number-of-documents)
        (partition-all bulk-size)))

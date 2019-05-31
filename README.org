@@ -1,6 +1,6 @@
 * elasticsearch-stress
   :PROPERTIES:
-  :header_args:bash: :session elasticsearch_stress.sh :results none :exports code
+  :header-args:bash: :session elasticsearch_stress.sh :results none :exports code
   :END:
 
   elasticsearch-stress is a stress tool for Elasticsearch.
@@ -9,7 +9,7 @@
    #+begin_src text
    elasticsearch-stress [OPTIONS]
 
-Op tions:
+   Options:
        --bulk                                                    Whether to use bulk requests or not. Defaults to true
        --bulk-size BULK_SIZE          100                        Size of bulk requests
        --document-size DOCUMENT_SIZE                             Size in bytes of documents
@@ -24,10 +24,10 @@ Op tions:
 ** Development
    Work on elasticsearch-stress is mostly done on Emacs. The workflow looks
    like:
-   1. A CIDER session is started with `M-x cider-jack-in`
-   2. Code is evaluated with with `cider-eval-sexp-at-point` or
-      `cider-eval-buffer`
-   3. Tests are run with `cider-test-run-test` or `cider-test-run-ns-tests`
+   1. A CIDER session is started with =M-x cider-jack-in=
+   2. Code is evaluated with with =cider-eval-sexp-at-point= or
+      =cider-eval-buffer=
+   3. Tests are run with =cider-test-run-test= or =cider-test-run-ns-tests=
 
 *** Requirements
     - Java
@@ -41,28 +41,24 @@ Op tions:
 
 *** Building uberjar
     #+begin_src bash
-    lein uberjar
+    lein do clean, uberjar
     #+end_src
 
-*** Building uberjar
+*** Prepend GraalVM binaries to PATH
     #+begin_src bash
-    ls
+    export PATH=$GRAALVM_HOME/bin:$PATH
     #+end_src
 
 *** Building native image
-    #+begin_src bash :session elasticsearch_stress.sh :results none :exports code
+    #+begin_src bash
     native-image \
-      --enable-http \
-      --enable-https \
       --initialize-at-build-time \
-      --no-fallback \
-      --no-server \
       --report-unsupported-elements-at-runtime \
+      --no-fallback \
       --verbose \
       -H:+ReportExceptionStackTraces \
-      -J-Xms4G \
-      -J-Xmx4G \
-      -O0 \
+      -J-Xms8G \
+      -J-Xmx8G \
       -jar target/uberjar/performance-benchmark-framework-0.1.0-SNAPSHOT-standalone.jar \
       elasticsearch-stress
     #+end_src

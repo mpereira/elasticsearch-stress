@@ -1,9 +1,11 @@
 (ns performance-benchmark-framework.statistics
   (:require [kixi.stats.core :as stats]
             [kixi.stats.distribution :as distribution :refer [quantile]]
-            [performance-benchmark-framework.utils :refer [between? non-zero?]]))
+            [performance-benchmark-framework.utils :refer [between?
+                                                           non-zero?]]))
 
-(def ^{:dynamic true} *exponential-distribution-max-value-denominator-multiplier* 0.065)
+(def ^{:dynamic true}
+  *exponential-distribution-max-value-denominator-multiplier* 0.065)
 
 (def ^{:dynamic true} *max-random-tries* 1000)
 
@@ -20,8 +22,9 @@
      :p95 (quantile distribution 0.95)
      :p99 (quantile distribution 0.99)}))
 
-(defn clipped-normal-distribution [sample-size mean standard-deviation min max]
-  {:pre [(<= min max)]}
+(defn clipped-normal-distribution
+  [sample-size mean standard-deviation min* max*]
+  {:pre [(<= min* max*)]}
   (let [distribution* (distribution/normal {:mu mean :sd standard-deviation})]
     (loop [sample-size sample-size
            full-sample []
@@ -31,11 +34,11 @@
                  {:sample-size sample-size
                   :mean mean
                   :standard-deviation standard-deviation
-                  :min min
-                  :max max}]}
+                  :min min*
+                  :max max*}]}
         (let [sample (->> distribution*
                           (distribution/sample sample-size)
-                          (filter (partial between? min max)))
+                          (filter (partial between? min* max*)))
               sample-count (count sample)
               new-full-sample (into full-sample sample)]
           (if (= sample-size sample-count)

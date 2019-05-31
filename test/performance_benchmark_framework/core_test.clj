@@ -49,3 +49,22 @@
            message)
        (is (= available-size (count (apply str tokens)))
            message)))))
+
+;; (deftest generate-fields-test
+;;   (dorun
+;;    (for [document-size (range 1000)]
+;;      (let [available-size (* (+ i 1) number-of-tokens)
+;;            {:keys [error] :as tokens} (generate-tokens generator
+;;                                                        number-of-tokens
+;;                                                        available-size
+;;                                                        {:unique? unique?})
+;;            message {:generator generator
+;;                     :unique? unique?
+;;                     :number-of-tokens number-of-tokens
+;;                     :available-size available-size}]
+;;        (is (= nil error)
+;;            message)
+;;        (is (= number-of-tokens (count tokens))
+;;            message)
+;;        (is (= available-size (count (apply str tokens)))
+;;            message)))))
