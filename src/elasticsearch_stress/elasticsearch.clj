@@ -1,4 +1,4 @@
-(ns performance-benchmark-framework.elasticsearch
+(ns elasticsearch-stress.elasticsearch
   (:require [cheshire.core :as json]
             [clojure.string :as string]
             [qbits.spandex :as s]))

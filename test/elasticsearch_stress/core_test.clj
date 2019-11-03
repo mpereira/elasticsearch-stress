@@ -1,7 +1,7 @@
-(ns performance-benchmark-framework.core-test
+(ns elasticsearch-stress.core-test
   (:require [clojure.test :refer :all]
-            [performance-benchmark-framework.generators :refer :all]
-            [performance-benchmark-framework.statistics :refer :all]))
+            [elasticsearch-stress.generators :refer :all]
+            [elasticsearch-stress.statistics :refer :all]))
 
 (deftest generate-field-and-value-test
   (dotimes [size 10]

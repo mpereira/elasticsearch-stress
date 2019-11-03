@@ -3,7 +3,7 @@
   :header-args:bash: :session elasticsearch_stress.sh :results none :exports code
   :END:
 
-  elasticsearch-stress is a stress tool for Elasticsearch.
+  elasticsearch-stress is a performance testing tool for Elasticsearch clusters.
 
 ** Usage
    #+begin_src text
@@ -11,7 +11,7 @@
 
    Options:
        --bulk                                                    Whether to use bulk requests or not. Defaults to true
-       --bulk-size BULK_SIZE          100                        Size of bulk requests
+       --bulk-documents BULK_DOCUMENTS          100                        Size of bulk requests
        --document-size DOCUMENT_SIZE                             Size in bytes of documents
        --documents DOCUMENTS                                     Number of documents to index
        --hosts HOSTS                  ["http://localhost:9200"]  List of comma-separated Elasticsearch hosts
@@ -20,6 +20,46 @@
    -v, --version                                                 Show version
    -h, --help                                                    Show help
    #+end_src
+
+** Commands
+*** Prepare GraalVM environment variables
+    #+begin_src bash
+    export GRAALVM_VERSION="19.2.1"
+    export GRAALVM_HOME="/Applications/GraalVM-${GRAALVM_VERSION}.app/Contents/Home"
+    export JAVA_HOME="${GRAALVM_HOME}"
+    export NATIVE_IMAGE_CONFIG_DIRECTORY="graalvm/conf/"
+    #+end_src
+
+*** Prepend GraalVM binaries to PATH (only once)
+    #+begin_src bash
+    export PATH="${GRAALVM_HOME}/bin:${PATH}"
+    #+end_src
+
+*** Get GraalVM native image configuration
+    #+begin_src bash
+    java -agentlib:native-image-agent=config-output-dir="${NATIVE_IMAGE_CONFIG_DIRECTORY}" \
+      -jar "${UBERJAR}" \
+      --help
+    #+end_src
+
+*** Building native image
+    - =--initialize-at-build-time= causes the command to run forever.
+
+    #+begin_src bash
+    native-image \
+      --initialize-at-build-time \
+      --no-fallback \
+      --no-server \
+      --report-unsupported-elements-at-runtime \
+      --verbose \
+      -H:+PrintClassInitialization \
+      -H:+ReportExceptionStackTraces \
+      -H:ConfigurationFileDirectories="${NATIVE_IMAGE_CONFIG_DIRECTORY}" \
+      -J-Xms8G \
+      -J-Xmx8G \
+      -jar "${UBERJAR}"
+      elasticsearch-stress
+    #+end_src
 
 ** Development
    Work on elasticsearch-stress is mostly done on Emacs. The workflow looks
@@ -44,44 +84,75 @@
     lein do clean, uberjar
     #+end_src
 
-*** Prepend GraalVM binaries to PATH
+*** Building Docker image
     #+begin_src bash
-    export PATH=$GRAALVM_HOME/bin:$PATH
+    docker build \
+           -t mpereira/elasticsearch-stress:latest \
+           -t mpereira/elasticsearch-stress:0.1.0-SNAPSHOT \
+           .
     #+end_src
 
-*** Building native image
+*** Publishing Docker image
     #+begin_src bash
-    native-image \
-      --initialize-at-build-time \
-      --report-unsupported-elements-at-runtime \
-      --no-fallback \
-      --verbose \
-      -H:+ReportExceptionStackTraces \
-      -J-Xms8G \
-      -J-Xmx8G \
-      -jar target/uberjar/performance-benchmark-framework-0.1.0-SNAPSHOT-standalone.jar \
-      elasticsearch-stress
+    docker login
     #+end_src
+
+    #+begin_src bash
+    echo 'mpereira/elasticsearch-stress:latest' \
+         'mpereira/elasticsearch-stress:0.1.0-SNAPSHOT' \
+      | xargs -n 1 docker push
+    #+end_src
+
+*** Run uberjar
+    #+begin_src bash
+    UBERJAR="target/uberjar/elasticsearch-stress-0.1.0-SNAPSHOT-standalone.jar"
+    java -jar "${UBERJAR}" --help
+    #+end_src
+
+** Planned feature release schedule
+*** v0.6.0
+    - [ ] Rust implementation with feature-parity
+*** v0.5.0
+    - [ ] More control over statistical distributions
+*** v0.4.0
+    - [ ] Custom workload
+    - [ ] Deterministic randomness for generated workloads
+    - [ ] Dictionary-based generated values
+*** v0.3.0
+    - [ ] Native binary for JAR
+    - [ ] Kubernetes integration
+    - [ ] Configurable output for load report (text, JSON, YAML, etc.)
+*** v0.2.0
+    - [ ] Read workload
+    - [ ] Maximum requests per second parameter for writes and reads
+    - [ ] SSL
+    - [ ] Configurable [[https://www.elastic.co/guide/en/elasticsearch/reference/current/search-request-body.html#request-body-search-preference][read preference]]
+    - [ ] Complain if INDEX_SETTINGS differ from existing INDEX_NAME
+    - [ ] Random mapping field types
+    - [ ] Configurable [[https://www.elastic.co/guide/en/elasticsearch/reference/current/docs-index_.html#index-wait-for-active-shards][wait_for_active_shards]]
+*** v0.1.0
+    - [ ] Write workload
+    - [ ] Basic HTTP authentication
+    - [ ] Docker image
 
 ** License
    #+begin_src text
    Copyright 2019 Murilo Pereira
 
-   Permission is hereby granted, free of charge, to any person obtaining a copy
-   of this software and associated documentation files (the "Software"), to deal
-   in the Software without restriction, including without limitation the rights
-   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-   copies of the Software, and to permit persons to whom the Software is
-   furnished to do so, subject to the following conditions:
+   Permission is hereby granted, free of charge, to any person obtaining a copy of
+   this software and associated documentation files (the "Software"), to deal in
+   the Software without restriction, including without limitation the rights to
+   use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+   the Software, and to permit persons to whom the Software is furnished to do so,
+   subject to the following conditions:
 
-   The above copyright notice and this permission notice shall be included in
-   all copies or substantial portions of the Software.
+   The above copyright notice and this permission notice shall be included in all
+   copies or substantial portions of the Software.
 
    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-   SOFTWARE.
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+   FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+   COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+   IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+   CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
    #+end_src

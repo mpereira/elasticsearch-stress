@@ -1,7 +1,7 @@
-(ns performance-benchmark-framework.statistics
+(ns elasticsearch-stress.statistics
   (:require [kixi.stats.core :as stats]
             [kixi.stats.distribution :as distribution :refer [quantile]]
-            [performance-benchmark-framework.utils :refer [between?
+            [elasticsearch-stress.utils :refer [between?
                                                            non-zero?]]))
 
 (def ^{:dynamic true}
@@ -56,7 +56,7 @@
         (or rate
             (/ 1 (* *exponential-distribution-max-value-denominator-multiplier*
                     max-value)))]
-    (first (distribution/exponential rate))))
+    (first (distribution/exponential {:rate rate}))))
 
 (defn rand-exponential-int [& args]
   (Math/round (apply rand-exponential args)))

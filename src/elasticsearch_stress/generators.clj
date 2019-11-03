@@ -1,5 +1,5 @@
-(ns performance-benchmark-framework.generators
-  (:require [performance-benchmark-framework.statistics
+(ns elasticsearch-stress.generators
+  (:require [elasticsearch-stress.statistics
              :refer [*max-random-tries*
                      clipped-normal-distribution
                      rand-exponential-int]]))
@@ -188,12 +188,14 @@
               {:fields tokens-or-error
                :size-remaining-for-values size-for-vs})))))))
 
-(defn generate-mapping [document-size]
+(defn generate-index [number-of-shards number-of-replicas document-size]
   (let [{:keys [error] :as result-or-error} (generate-fields document-size)]
     (if error
       result-or-error
       (let [{:keys [fields size-remaining-for-values]} result-or-error]
-        {:mapping {:properties (reduce (fn [properties field]
+        {:settings {:number_of_shards number-of-shards
+                    :number_of_replicas number-of-replicas}
+         :mapping {:properties (reduce (fn [properties field]
                                          (assoc properties
                                                 field {:type "keyword"}))
                                        {}
@@ -207,7 +209,7 @@
     (into {} (map vector (keys properties) generator-outputs))))
 
 (defn generate-document-batches
-  [number-of-documents bulk-size document-size mapping size-for-values]
+  [number-of-documents bulk-documents document-size mapping size-for-values]
   (->> #(generate-document mapping size-for-values)
        (repeatedly number-of-documents)
-       (partition-all bulk-size)))
+       (partition-all bulk-documents)))

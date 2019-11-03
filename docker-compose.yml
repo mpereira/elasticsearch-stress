@@ -13,7 +13,7 @@ networks:
 
 services:
   elasticsearch-data-0:
-    image: docker.elastic.co/elasticsearch/elasticsearch:7.0.1
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.4.1
     container_name: elasticsearch-data-0
     environment:
       - node.name=elasticsearch-data-0
@@ -34,7 +34,7 @@ services:
       - shared-network
 
   elasticsearch-data-1:
-    image: docker.elastic.co/elasticsearch/elasticsearch:7.0.1
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.4.1
     container_name: elasticsearch-data-1
     environment:
       - node.name=elasticsearch-data-1
@@ -296,7 +296,7 @@ services:
   #     - 9108:9108
 
   elasticsearch-prometheus-exporter:
-    image: justwatch/elasticsearch_exporter:1.0.2
+    image: justwatch/elasticsearch_exporter:1.1.0
     container_name: elasticsearch-prometheus-exporter
     command:
       - "-es.uri=http://elasticsearch-data-0:9200"
