@@ -18,9 +18,7 @@
    {:source-paths ["dev"]
     :dependencies [;; Adding this early in the dependency list so that its
                    ;; subdependencies are overriden.
-                   [metasoarous/oz "1.5.6"]
-                   ;; https://mvnrepository.com/artifact/com.carrotsearch.randomizedtesting/randomizedtesting-runner
-                   [com.carrotsearch.randomizedtesting/randomizedtesting-runner "2.7.4"]]
+                   [metasoarous/oz "1.5.6"]]
     :plugins [[lein-ancient "0.6.15"]
               [lein-bikeshed "0.5.2"]
               [lein-cljfmt "0.6.4"]]}

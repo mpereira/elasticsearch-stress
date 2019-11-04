@@ -146,17 +146,15 @@
                          threads]}]
   (let [default-number-of-shards 1
         default-number-of-replicas 1
-        document-size 5000
-        documents 500
-        {:keys [mapping size-remaining-for-values] :as index}
-        (generators/generate-index
-         default-number-of-shards
-         default-number-of-replicas
-         document-size)]
+        {:keys [mapping] :as index} (generators/generate-index
+                                     default-number-of-shards
+                                     default-number-of-replicas)]
     (info (format "%-19s" "Bulk:") bulk)
     (info (format "%-19s" "Bulk documents:") bulk-documents)
-    (info (format "%-19s" "Workload size:") workload-size)
-    (info (format "%-19s" "Workload duration:") workload-duration)
+    (when workload-size
+      (info (format "%-19s" "Workload size:") workload-size))
+    (when workload-duration
+      (info (format "%-19s" "Workload duration:") workload-duration))
     (info (format "%-19s" "Workload documents:") workload-documents)
     (info (format "%-19s" "Hosts:") hosts)
     (info (format "%-19s" "Threads:") threads)
@@ -170,11 +168,10 @@
           (runtime
            (if bulk
              (->> (generators/generate-document-batches
-                   documents
+                   workload-size
+                   workload-documents
                    bulk-documents
-                   document-size
-                   mapping
-                   size-remaining-for-values)
+                   mapping)
                   (cp/pmap pool (partial process-bulk-batch client index-name))
                   (reduce (partial merge-with into)
                           {:runtime-ms []
@@ -185,17 +182,15 @@
                            :successful []
                            :failed []
                            :result []}))
-             (let [documents* (repeatedly documents
-                                          #(generators/generate-document
-                                            mapping size-remaining-for-values))]
-               (->> documents*
-                    (cp/pmap pool (partial process-document client index-name))
-                    (reduce (partial merge-with conj)
-                            {:runtime-ms []
-                             :status []
-                             :total []
-                             :successful []
-                             :failed []})))))
+             (->> (partial generators/generate-document mapping)
+                  (repeatedly workload-documents)
+                  (cp/pmap pool (partial process-document client index-name))
+                  (reduce (partial merge-with conj)
+                          {:runtime-ms []
+                           :status []
+                           :total []
+                           :successful []
+                           :failed []}))))
           report (-> outcomes
                      (update :runtime-ms statistics/statistics)
                      (update :bulk-status frequencies)

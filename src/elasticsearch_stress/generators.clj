@@ -1,10 +1,15 @@
 (ns elasticsearch-stress.generators
   (:require [elasticsearch-stress.statistics
+             :as statistics
              :refer [*max-random-tries*
-                     clipped-normal-distribution
                      rand-exponential-int]]))
 
 (def ^{:dynamic true} *token-size-jitter* 0.2)
+
+(def ^{:dynamic true} *field-name-alphabet*
+  (map char (range (int \a) (inc (int \z)))))
+
+(def ^{:dynamic true} *max-number-of-fields* 100)
 
 (def digit (range 0 10))
 
@@ -75,7 +80,7 @@
                                            tokens-to-go
                                            minimum-token-size)
                   {:keys [error] :as distribution-or-error}
-                  (clipped-normal-distribution
+                  (statistics/clipped-normal-distribution
                    1 mean standard-deviation min* max*)]
               (if error
                 distribution-or-error
@@ -127,7 +132,7 @@
                            (conj tokens token-or-error)
                            unique-attempts-remaining)))))))))))
 
-(defn generate-fields [document-size]
+(defn generate-tokens [document-size]
   (let [document-overhead 2      ;; {}
         minimum-token-size 1     ;; a
         kv-overhead 5            ;; "":""
@@ -188,19 +193,69 @@
               {:fields tokens-or-error
                :size-remaining-for-values size-for-vs})))))))
 
-(defn generate-index [number-of-shards number-of-replicas document-size]
-  (let [{:keys [error] :as result-or-error} (generate-fields document-size)]
-    (if error
-      result-or-error
-      (let [{:keys [fields size-remaining-for-values]} result-or-error]
-        {:settings {:number_of_shards number-of-shards
-                    :number_of_replicas number-of-replicas}
-         :mapping {:properties (reduce (fn [properties field]
-                                         (assoc properties
-                                                field {:type "keyword"}))
-                                       {}
-                                       fields)}
-         :size-remaining-for-values size-remaining-for-values}))))
+;; a
+;; b
+;; c
+;; aa
+;; ab
+;; ac
+;; ba
+;; bb
+;; bc
+
+(defn field-seq [alphabet number-of-fields]
+  (let [max-field-size (max 1 (quot number-of-fields (count alphabet)))
+        max-counter-value (- (int (last alphabet)) (int (first alphabet)))
+        counters->str (fn counters->str [counters]
+                        (apply str (map (partial nth alphabet) counters)))
+        zero (constantly 0)
+        zero-counters-from-idx (fn zero-counters-from-idx [counters idx]
+                                 (loop [counters counters
+                                        idx idx]
+                                   (if (contains? counters idx)
+                                     (recur (update counters idx zero)
+                                            (inc idx))
+                                     counters)))
+        rightmost-non-max-counter-idx* (fn rightmost-non-max-counter-idx*
+                                         [counters]
+                                         (loop [idx (dec (count counters))]
+                                           (when (nat-int? idx)
+                                             (if (> max-counter-value
+                                                    (get counters idx))
+                                               idx
+                                               (recur (dec idx))))))]
+    (loop [fields []
+           counters [0]
+           fields-to-go number-of-fields]
+      (if (zero? fields-to-go)
+        fields
+        (let [rightmost-non-max-counter-idx (rightmost-non-max-counter-idx* counters)]
+          (if rightmost-non-max-counter-idx
+            (recur (conj fields (counters->str counters))
+                   (-> counters
+                       (update rightmost-non-max-counter-idx inc)
+                       (zero-counters-from-idx (inc rightmost-non-max-counter-idx)))
+                   (dec fields-to-go))
+            (recur (conj fields (counters->str counters))
+                   (conj (zero-counters-from-idx counters 0) 0)
+                   (dec fields-to-go))))))))
+
+(defn generate-fields [number-of-fields]
+  (let [alphabet (map char (range (int \a) (inc (int \z))))
+        alphabet-size (count alphabet)]
+    (field-seq alphabet number-of-fields)))
+
+(defn generate-index [number-of-shards number-of-replicas]
+  (let [number-of-fields (inc (statistics/rand-exponential-int
+                               {:max-value *max-number-of-fields*}))
+        fields (generate-fields number-of-fields)]
+    {:settings {:number_of_shards number-of-shards
+                :number_of_replicas number-of-replicas}
+     :mapping {:properties (reduce (fn [properties field]
+                                     (assoc properties
+                                            field {:type "keyword"}))
+                                   {}
+                                   fields)}}))
 
 (defn generate-document [{:keys [properties] :as mapping} available-size]
   (let [generator-outputs (generate-tokens generate-value
@@ -208,8 +263,13 @@
                                            available-size)]
     (into {} (map vector (keys properties) generator-outputs))))
 
-(defn generate-document-batches
-  [number-of-documents bulk-documents document-size mapping size-for-values]
-  (->> #(generate-document mapping size-for-values)
-       (repeatedly number-of-documents)
+(defn generate-document-batches [workload-size
+                                 workload-documents
+                                 bulk-documents
+                                 document-size
+                                 mapping]
+  ;; TODO: generate documents until `workload-size` or `workload-documents` are
+  ;; satisfied.
+  (->> #(generate-document mapping)
+       (repeatedly workload-documents)
        (partition-all bulk-documents)))
