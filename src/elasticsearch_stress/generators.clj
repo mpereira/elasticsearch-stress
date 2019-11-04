@@ -193,21 +193,10 @@
               {:fields tokens-or-error
                :size-remaining-for-values size-for-vs})))))))
 
-;; a
-;; b
-;; c
-;; aa
-;; ab
-;; ac
-;; ba
-;; bb
-;; bc
-
-(defn field-seq [alphabet number-of-fields]
-  (let [max-field-size (max 1 (quot number-of-fields (count alphabet)))
-        max-counter-value (- (int (last alphabet)) (int (first alphabet)))
-        counters->str (fn counters->str [counters]
-                        (apply str (map (partial nth alphabet) counters)))
+(defn token-seq [alphabet number-of-tokens]
+  (let [max-counter-value (- (int (last alphabet)) (int (first alphabet)))
+        counters->token (fn counters->token [counters]
+                          (apply str (map (partial nth alphabet) counters)))
         zero (constantly 0)
         zero-counters-from-idx (fn zero-counters-from-idx [counters idx]
                                  (loop [counters counters
@@ -224,26 +213,24 @@
                                                     (get counters idx))
                                                idx
                                                (recur (dec idx))))))]
-    (loop [fields []
+    (loop [tokens []
            counters [0]
-           fields-to-go number-of-fields]
-      (if (zero? fields-to-go)
-        fields
-        (let [rightmost-non-max-counter-idx (rightmost-non-max-counter-idx* counters)]
-          (if rightmost-non-max-counter-idx
-            (recur (conj fields (counters->str counters))
-                   (-> counters
-                       (update rightmost-non-max-counter-idx inc)
-                       (zero-counters-from-idx (inc rightmost-non-max-counter-idx)))
-                   (dec fields-to-go))
-            (recur (conj fields (counters->str counters))
-                   (conj (zero-counters-from-idx counters 0) 0)
-                   (dec fields-to-go))))))))
+           tokens-to-go number-of-tokens]
+      (if (zero? tokens-to-go)
+        tokens
+        (if-let [rightmost-non-max-counter-idx (rightmost-non-max-counter-idx* counters)]
+          (recur (conj tokens (counters->token counters))
+                 (-> counters
+                     (update rightmost-non-max-counter-idx inc)
+                     (zero-counters-from-idx (inc rightmost-non-max-counter-idx)))
+                 (dec tokens-to-go))
+          (recur (conj tokens (counters->token counters))
+                 (conj (zero-counters-from-idx counters 0) 0)
+                 (dec tokens-to-go)))))))
 
 (defn generate-fields [number-of-fields]
-  (let [alphabet (map char (range (int \a) (inc (int \z))))
-        alphabet-size (count alphabet)]
-    (field-seq alphabet number-of-fields)))
+  (let [alphabet-size (count *field-name-alphabet*)]
+    (token-seq *field-name-alphabet* number-of-fields)))
 
 (defn generate-index [number-of-shards number-of-replicas]
   (let [number-of-fields (inc (statistics/rand-exponential-int
