@@ -167,12 +167,13 @@
            outcomes :value}
           (runtime
            (if bulk
+
              (->> (generators/generate-document-batches
+                   index
                    workload-size
                    workload-documents
-                   bulk-documents
-                   mapping)
-                  (cp/pmap pool (partial process-bulk-batch client index-name))
+                   bulk-documents)
+                  (cp/upmap pool (partial process-bulk-batch client index-name))
                   (reduce (partial merge-with into)
                           {:runtime-ms []
                            :took []

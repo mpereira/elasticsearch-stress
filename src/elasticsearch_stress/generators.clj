@@ -35,7 +35,9 @@
          (take (dec size)
                (repeatedly #(rand-nth lowercase-alpha-numeric)))))
 
-(defn generate-value [size]
+(defn generate-value
+  "Generates a random value of given size for a keyword field."
+  [size]
   {:pre [(or (zero? size) (pos? size))]}
   (->> #(rand-nth (concat lowercase-alpha-numeric symbol*))
        (repeatedly)
@@ -244,19 +246,28 @@
                                    {}
                                    fields)}}))
 
-(defn generate-document [{:keys [properties] :as mapping} available-size]
+(defn generate-document [{{:keys [properties]} :mapping :as index}
+                         available-size]
   (let [generator-outputs (generate-tokens generate-value
                                            (count properties)
                                            available-size)]
     (into {} (map vector (keys properties) generator-outputs))))
 
-(defn generate-document-batches [workload-size
+(defn minimum-document-size
+  "This assumes all fields are keywords and considers the minimum field size to be
+  a string of size one."
+  [{:keys [mapping] :as index}]
+  (count (:properties mapping)))
+
+(defn generate-document-batches [{:keys [mapping] :as index}
+                                 workload-size
                                  workload-documents
-                                 bulk-documents
-                                 document-size
-                                 mapping]
+                                 bulk-documents]
   ;; TODO: generate documents until `workload-size` or `workload-documents` are
   ;; satisfied.
-  (->> #(generate-document mapping)
-       (repeatedly workload-documents)
-       (partition-all bulk-documents)))
+  (loop [workload-size workload-size
+         workload-documents workload-documents]
+    volatile!
+    (->> #(generate-document index)
+         (repeatedly workload-documents)
+         (partition-all bulk-documents))))
